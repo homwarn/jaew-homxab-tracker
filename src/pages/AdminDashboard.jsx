@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { supabase } from '../lib/supabase'
+import { supabase, getSignedUrl } from '../lib/supabase'
 import { useAuth } from '../App'
 import { exportAllReports } from '../lib/excel'
 import {
@@ -8,7 +8,7 @@ import {
 import { ToastProvider, useToast } from '../components/Toast'
 import {
   LayoutDashboard, Users, Factory, Truck, ShoppingBag, Download,
-  Plus, Pencil, Trash2, Eye, EyeOff, RefreshCw, Store, ChevronDown
+  Plus, Pencil, Trash2, Eye, EyeOff, RefreshCw, Store, ChevronDown, ChevronRight, Image
 } from 'lucide-react'
 
 // ─── Tab definitions ──────────────────────────────────────────────────────
@@ -36,6 +36,30 @@ function Inner() {
   const [distrib, setDistrib]       = useState([])
   const [sales, setSales]           = useState([])
   const [stockMap, setStockMap]     = useState({})
+
+  // Detail modal state
+  const [detail, setDetail]           = useState(null)   // { type, record }
+  const [detailImgs, setDetailImgs]   = useState({})
+  const [loadingImg, setLoadingImg]   = useState(false)
+
+  async function openDetail(type, record) {
+    setDetail({ type, record })
+    setDetailImgs({})
+    setLoadingImg(true)
+    const bucketMap = { production: 'production-images', distrib: 'distribution-images', sales: 'sales-images' }
+    const bucket = bucketMap[type]
+    const imageFields = {
+      production: ['image_url'],
+      distrib:    ['bill_image_url', 'slip_image_url', 'delivery_image_url'],
+      sales:      ['image_url', 'report_image_url'],
+    }[type] || []
+    const urls = {}
+    await Promise.all(imageFields.map(async f => {
+      if (record[f]) { const u = await getSignedUrl(bucket, record[f]); if (u) urls[f] = u }
+    }))
+    setDetailImgs(urls)
+    setLoadingImg(false)
+  }
 
   // User form state
   const [showUserForm, setShowUserForm] = useState(false)
@@ -326,21 +350,26 @@ function Inner() {
         {production.length === 0 ? <Empty icon="🏭" /> : (
           <div className="space-y-2">
             {production.map(r => (
-              <div key={r.id} className="card">
+              <button key={r.id} onClick={() => openDetail('production', r)}
+                className="card w-full text-left hover:border-brand-yellow/40 transition-colors">
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
                     <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
+                    {r.image_url && <p className="text-brand-yellow text-xs mt-1 flex items-center gap-1"><Image size={10}/>ມີຮູບ</p>}
                   </div>
-                  <div className="text-right">
-                    <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination==='retail'?'bg-green-900/30 text-green-400':'bg-blue-900/30 text-blue-400'}`}>
-                      {r.destination==='retail'?'ຮ້ານດາດ':'ສົ່ງ'}
-                    </span>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination==='retail'?'bg-green-900/30 text-green-400':'bg-blue-900/30 text-blue-400'}`}>
+                        {r.destination==='retail'?'ຮ້ານດາດ':'ສົ່ງ'}
+                      </span>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-500"/>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -355,24 +384,27 @@ function Inner() {
         {distrib.length === 0 ? <Empty icon="🚚" /> : (
           <div className="space-y-2">
             {distrib.map(r => (
-              <div key={r.id} className="card">
+              <button key={r.id} onClick={() => openDetail('distrib', r)}
+                className="card w-full text-left hover:border-brand-yellow/40 transition-colors">
                 <div className="flex justify-between items-start">
                   <div className="flex-1">
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
-                    <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{r.store_name}</p>
+                    <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11}/>{r.store_name}</p>
                     <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
+                    {(r.bill_image_url||r.slip_image_url||r.delivery_image_url) && <p className="text-brand-yellow text-xs mt-1 flex items-center gap-1"><Image size={10}/>ມີຮູບ</p>}
                   </div>
-                  <div className="text-right">
-                    <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.payment_method==='cash'?'bg-green-900/30 text-green-400':'bg-blue-900/30 text-blue-400'}`}>
-                      {r.payment_method==='cash'?'💵 ສົດ':'💳 ໂອນ'}
-                    </span>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
+                      <span className={`text-xs px-2 py-0.5 rounded-full ${r.payment_method==='cash'?'bg-green-900/30 text-green-400':'bg-blue-900/30 text-blue-400'}`}>
+                        {r.payment_method==='cash'?'💵 ສົດ':'💳 ໂອນ'}
+                      </span>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-500"/>
                   </div>
                 </div>
-                {r.receiver_name && <p className="text-gray-500 text-xs mt-1">👤 ຮັບ: {r.receiver_name}</p>}
-                {r.transfer_note  && <p className="text-gray-500 text-xs mt-1">📝 {r.transfer_note}</p>}
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -387,20 +419,25 @@ function Inner() {
         {sales.length === 0 ? <Empty icon="🛒" /> : (
           <div className="space-y-2">
             {sales.map(r => (
-              <div key={r.id} className="card">
+              <button key={r.id} onClick={() => openDetail('sales', r)}
+                className="card w-full text-left hover:border-brand-yellow/40 transition-colors">
                 <div className="flex justify-between items-start">
-                  <div>
+                  <div className="flex-1">
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
                     <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{r.store_name}</p>
                     <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
+                    {(r.image_url||r.report_image_url) && <p className="text-brand-yellow text-xs mt-1 flex items-center gap-1"><Image size={10}/>ມີຮູບ</p>}
                   </div>
-                  <div className="text-right">
-                    <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
-                    <p className="text-gray-400 text-xs">ເຫລືອ: {r.remaining}</p>
+                  <div className="text-right flex items-center gap-2">
+                    <div>
+                      <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
+                      <p className="text-gray-400 text-xs">ເຫລືອ: {r.remaining}</p>
+                    </div>
+                    <ChevronRight size={15} className="text-gray-500"/>
                   </div>
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -564,6 +601,124 @@ function Inner() {
         confirmLabel="ລຶບ"
         danger
       />
+
+      {/* Detail Modal */}
+      <Modal
+        open={!!detail}
+        onClose={() => { setDetail(null); setDetailImgs({}) }}
+        title={
+          detail?.type === 'production' ? '🏭 ລາຍລະອຽດການຜະລິດ' :
+          detail?.type === 'distrib'    ? '🚚 ລາຍລະອຽດການກະຈາຍ' :
+                                         '🛒 ລາຍລະອຽດການຂາຍ'
+        }
+      >
+        {detail && (() => {
+          const r = detail.record
+          const Row = ({ label, value }) => value ? (
+            <div className="flex justify-between py-1.5 border-b border-dark-500 last:border-0">
+              <span className="text-gray-400 text-sm">{label}</span>
+              <span className="text-white text-sm font-medium text-right max-w-[60%]">{value}</span>
+            </div>
+          ) : null
+
+          return (
+            <div className="space-y-4">
+              {/* Common fields */}
+              <div className="card space-y-0 py-1">
+                <Row label="ສິນຄ້າ"      value={`${r.products?.type} ${r.products?.size}`} />
+                <Row label="ຈຳນວນ"       value={`${r.quantity} ຕຸກ`} />
+                <Row label="ຜູ້ບັນທຶກ"   value={users.find(u => u.id === r.created_by)?.name || 'Unknown'} />
+                <Row label="ວັນທີ"        value={fmtDateTime(r.created_at)} />
+
+                {/* Production-specific */}
+                {detail.type === 'production' && (
+                  <Row label="ປາຍທາງ" value={r.destination === 'retail' ? 'ຮ້ານດາດ' : 'ສົ່ງ'} />
+                )}
+
+                {/* Distribution-specific */}
+                {detail.type === 'distrib' && <>
+                  <Row label="ຮ້ານ"           value={r.store_name} />
+                  <Row label="ຜູ້ຮັບ"          value={r.receiver_name} />
+                  <Row label="ເບີໂທ"           value={r.phone} />
+                  <Row label="ຊຳລະ"           value={r.payment_method === 'cash' ? '💵 ເງິນສົດ' : '💳 ໂອນ'} />
+                  <Row label="ໝາຍເຫດ"         value={r.notes} />
+                </>}
+
+                {/* Sales-specific */}
+                {detail.type === 'sales' && <>
+                  <Row label="ຮ້ານ"       value={r.store_name} />
+                  <Row label="ຍັງເຫລືອ"   value={`${r.remaining} ຕຸກ`} />
+                  <Row label="ໝາຍເຫດ"    value={r.notes} />
+                </>}
+              </div>
+
+              {/* Images */}
+              {loadingImg ? (
+                <div className="flex justify-center py-4"><Spinner size={28} /></div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Production image */}
+                  {detail.type === 'production' && detailImgs.image_url && (
+                    <div>
+                      <p className="text-gray-400 text-xs mb-1">📸 ຮູບພາບ</p>
+                      <img src={detailImgs.image_url} alt="production" className="w-full rounded-xl object-cover max-h-64" />
+                    </div>
+                  )}
+
+                  {/* Distribution images */}
+                  {detail.type === 'distrib' && <>
+                    {detailImgs.bill_image_url && (
+                      <div>
+                        <p className="text-gray-400 text-xs mb-1">🧾 ໃບບິນ</p>
+                        <img src={detailImgs.bill_image_url} alt="bill" className="w-full rounded-xl object-cover max-h-64" />
+                      </div>
+                    )}
+                    {detailImgs.slip_image_url && (
+                      <div>
+                        <p className="text-gray-400 text-xs mb-1">💳 ສະລິບໂອນ</p>
+                        <img src={detailImgs.slip_image_url} alt="slip" className="w-full rounded-xl object-cover max-h-64" />
+                      </div>
+                    )}
+                    {detailImgs.delivery_image_url && (
+                      <div>
+                        <p className="text-gray-400 text-xs mb-1">📦 ຮູບສົ່ງ</p>
+                        <img src={detailImgs.delivery_image_url} alt="delivery" className="w-full rounded-xl object-cover max-h-64" />
+                      </div>
+                    )}
+                  </>}
+
+                  {/* Sales images */}
+                  {detail.type === 'sales' && <>
+                    {detailImgs.image_url && (
+                      <div>
+                        <p className="text-gray-400 text-xs mb-1">🏪 ຮູບຮ້ານ / Stock</p>
+                        <img src={detailImgs.image_url} alt="store" className="w-full rounded-xl object-cover max-h-64" />
+                      </div>
+                    )}
+                    {detailImgs.report_image_url && (
+                      <div>
+                        <p className="text-gray-400 text-xs mb-1">📊 ຮູບລາຍງານ</p>
+                        <img src={detailImgs.report_image_url} alt="report" className="w-full rounded-xl object-cover max-h-64" />
+                      </div>
+                    )}
+                  </>}
+
+                  {/* No images placeholder */}
+                  {!loadingImg &&
+                    Object.keys(detailImgs).length === 0 &&
+                    (r.image_url || r.bill_image_url || r.report_image_url) === undefined && (
+                    <p className="text-gray-500 text-sm text-center py-2">ບໍ່ມີຮູບພາບ</p>
+                  )}
+                </div>
+              )}
+
+              <button onClick={() => { setDetail(null); setDetailImgs({}) }} className="btn-secondary w-full">
+                ປິດ
+              </button>
+            </div>
+          )
+        })()}
+      </Modal>
     </div>
   )
 }
