@@ -63,6 +63,17 @@ function Inner() {
 
   useEffect(() => { load() }, [load])
 
+  // ─── Realtime subscriptions ───────────────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('distributor-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },   () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },        () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [load])
+
   async function addStore() {
     if (!newStoreName.trim()) return
     setAddingStore(true)

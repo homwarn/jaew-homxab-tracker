@@ -61,9 +61,9 @@ function Inner() {
       ] = await Promise.all([
         supabase.from('products').select('*').order('type'),
         supabase.from('profiles').select('*').order('created_at'),
-        supabase.from('production').select('*, products(*), profiles(name)').order('created_at', { ascending: false }),
-        supabase.from('distribution').select('*, products(*), profiles(name)').order('created_at', { ascending: false }),
-        supabase.from('sales').select('*, products(*), profiles(name)').order('created_at', { ascending: false }),
+        supabase.from('production').select('*, products(*)').order('created_at', { ascending: false }),
+        supabase.from('distribution').select('*, products(*)').order('created_at', { ascending: false }),
+        supabase.from('sales').select('*, products(*)').order('created_at', { ascending: false }),
       ])
       setProducts(prods || [])
       setUsers(u || [])
@@ -95,6 +95,17 @@ function Inner() {
   }, [])
 
   useEffect(() => { load() }, [load])
+
+  // ─── Realtime subscriptions ───────────────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('admin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },   () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },        () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [load])
 
   // ─── User CRUD ────────────────────────────────────────────────────────
   function openCreateUser() {
@@ -319,7 +330,7 @@ function Inner() {
                 <div className="flex justify-between items-start">
                   <div>
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
-                    <p className="text-gray-400 text-xs">👤 {r.profiles?.name || 'Unknown'}</p>
+                    <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
                   </div>
                   <div className="text-right">
@@ -349,7 +360,7 @@ function Inner() {
                   <div className="flex-1">
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
                     <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{r.store_name}</p>
-                    <p className="text-gray-400 text-xs">👤 {r.profiles?.name || 'Unknown'}</p>
+                    <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
                   </div>
                   <div className="text-right">
@@ -381,7 +392,7 @@ function Inner() {
                   <div>
                     <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
                     <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{r.store_name}</p>
-                    <p className="text-gray-400 text-xs">👤 {r.profiles?.name || 'Unknown'}</p>
+                    <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
                     <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
                   </div>
                   <div className="text-right">

@@ -57,6 +57,17 @@ function Inner() {
 
   useEffect(() => { load() }, [load])
 
+  // ─── Realtime subscriptions ───────────────────────────────────────────
+  useEffect(() => {
+    const channel = supabase
+      .channel('seller-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },   () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },        () => load())
+      .subscribe()
+    return () => { supabase.removeChannel(channel) }
+  }, [load])
+
   async function handleSubmit(e) {
     e.preventDefault()
     if (!form.product_id || !form.quantity) { toast.error('ໃສ່ຂໍ້ມູນໃຫ້ຄົບ'); return }
