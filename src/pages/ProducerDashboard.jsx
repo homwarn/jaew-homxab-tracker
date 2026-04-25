@@ -58,7 +58,7 @@ function Inner() {
       ;(prods || []).forEach(p => {
         map[p.id] = {
           produced: pm[p.id] || 0, distributed: dm[p.id] || 0, sold: sm[p.id] || 0,
-          remaining: (pm[p.id]||0) - (dm[p.id]||0) - (sm[p.id]||0)
+          remaining: (pm[p.id]||0) - (dm[p.id]||0)  // ຍອດຂາຍ ເປັນລາຍງານເທົ່ານັ້ນ, ບໍ່ຕັດ stock
         }
       })
       setStockMap(map)
