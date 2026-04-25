@@ -22,6 +22,8 @@
 3. Copy ທັງໝົດໃນ `supabase/schema.sql`
 4. Paste ເຂົ້າ SQL Editor
 5. ກົດ **"Run"** (Ctrl+Enter)
+6. ສ້າງ query ໃໝ່ອີກອັນໜຶ່ງ → Copy ໄຟລ໌ `supabase/schema_v2_additions.sql` → Run
+   (ເພີ່ມ: `unit_price`, `is_paid`, `phone`, `orders`, `notifications` tables ສຳລັບ Dashboard ຮ້ານຄ້າ ແລະ ການແຈ້ງ Distributor)
 
 ---
 

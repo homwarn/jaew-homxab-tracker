@@ -9,7 +9,8 @@ import { ToastProvider, useToast } from '../components/Toast'
 import {
   LayoutDashboard, Users, Factory, Truck, ShoppingBag, Download,
   Plus, Pencil, Trash2, Eye, EyeOff, Store, ChevronRight, Image,
-  ClipboardList, CheckCircle, XCircle, RotateCcw, Edit3
+  ClipboardList, CheckCircle, XCircle, RotateCcw, Edit3,
+  Bell, Send, TrendingUp
 } from 'lucide-react'
 
 // ─── Tab definitions ──────────────────────────────────────────────────────
@@ -20,6 +21,7 @@ const TABS = [
   { id: 'distrib',    label: 'ກະຈາຍ',      icon: Truck },
   { id: 'sales',      label: 'ຂາຍ',        icon: ShoppingBag },
   { id: 'orders',     label: 'ສັ່ງ',        icon: ClipboardList },
+  { id: 'stores',     label: 'ຮ້ານ',        icon: Store },
   { id: 'export',     label: 'Export',     icon: Download },
 ]
 
@@ -57,6 +59,17 @@ function Inner() {
   // Reset confirm
   const [resetConfirm, setResetConfirm]   = useState(null) // { type, label }
 
+  // Notifications
+  const [notifications, setNotifications]   = useState([])
+  const [showNotifForm, setShowNotifForm]   = useState(false)
+  const [sendingNotif, setSendingNotif]     = useState(false)
+  const [notifForm, setNotifForm]           = useState({ assignedTo: '', message: '' })
+
+  // Store stats filter
+  const [storeFilter, setStoreFilter]       = useState('month') // 'week'|'month'|'custom'
+  const [filterFrom, setFilterFrom]         = useState('')
+  const [filterTo, setFilterTo]             = useState('')
+
   // User form state
   const [showUserForm, setShowUserForm]   = useState(false)
   const [editUser, setEditUser]           = useState(null)
@@ -78,6 +91,7 @@ function Inner() {
         { data: dist },
         { data: s },
         { data: ord },
+        { data: notifs },
       ] = await Promise.all([
         supabase.from('products').select('*').order('type'),
         supabase.from('profiles').select('*').order('created_at'),
@@ -85,6 +99,7 @@ function Inner() {
         supabase.from('distribution').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('sales').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('orders').select('*, products(*)').order('created_at', { ascending: false }),
+        supabase.from('notifications').select('*, profiles!notifications_created_by_fkey(name)').order('created_at', { ascending: false }).limit(50),
       ])
       setProducts(prods || [])
       setUsers(u || [])
@@ -92,6 +107,7 @@ function Inner() {
       setDistrib(dist || [])
       setSales(s || [])
       setOrders(ord || [])
+      setNotifications(notifs || [])
 
       // ── Stock = ຜະລິດ − ກະຈາຍ (ຍອດຂາຍ ລາຍງານເທົ່ານັ້ນ, ບໍ່ຕັດ stock) ──
       const pm = {}, dm = {}
@@ -124,7 +140,8 @@ function Inner() {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },   () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },        () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },       () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },        () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => load())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [load])
@@ -308,6 +325,61 @@ function Inner() {
   const transferDist = distrib.filter(r => r.payment_method === 'transfer')
   const cashQty      = cashDist.reduce((s, r) => s + r.quantity, 0)
   const transferQty  = transferDist.reduce((s, r) => s + r.quantity, 0)
+
+  // ─── Send notification to distributor ─────────────────────────────────
+  async function sendNotification() {
+    if (!notifForm.message.trim()) { toast.error('ໃສ່ຂໍ້ຄວາມ'); return }
+    setSendingNotif(true)
+    try {
+      const { error } = await supabase.from('notifications').insert({
+        type:        'pickup',
+        message:     notifForm.message.trim(),
+        assigned_to: notifForm.assignedTo || null,
+        created_by:  user.id,
+        status:      'pending',
+      })
+      if (error) throw error
+      toast.success('ສົ່ງແຈ້ງ Distributor ສຳເລັດ ✅')
+      setShowNotifForm(false)
+      setNotifForm({ assignedTo: '', message: '' })
+      load()
+    } catch (err) {
+      toast.error('ຜິດພາດ: ' + err.message)
+    } finally {
+      setSendingNotif(false)
+    }
+  }
+
+  // ─── Store statistics calculation ─────────────────────────────────────
+  function getStoreStats() {
+    const now = new Date()
+    let startDate, endDate = now
+    if (storeFilter === 'week') {
+      startDate = new Date(now); startDate.setDate(startDate.getDate() - 7)
+    } else if (storeFilter === 'month') {
+      startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    } else {
+      startDate = filterFrom ? new Date(filterFrom) : new Date('2020-01-01')
+      endDate   = filterTo   ? new Date(filterTo + 'T23:59:59') : now
+    }
+    const filtered = distrib.filter(r => {
+      const d = new Date(r.created_at)
+      return d >= startDate && d <= endDate
+    })
+    const map = {}
+    filtered.forEach(r => {
+      const key = r.store_name || 'ບໍ່ລະບຸ'
+      if (!map[key]) map[key] = { qty: 0, amount: 0, count: 0, lastDate: null }
+      map[key].qty    += r.quantity || 0
+      map[key].amount += (r.quantity || 0) * (r.unit_price || 0)
+      map[key].count  += 1
+      if (!map[key].lastDate || r.created_at > map[key].lastDate) map[key].lastDate = r.created_at
+    })
+    const sorted = Object.entries(map).sort((a, b) => b[1].qty - a[1].qty)
+    const totalQty    = sorted.reduce((s, [, v]) => s + v.qty,    0)
+    const totalAmount = sorted.reduce((s, [, v]) => s + v.amount, 0)
+    return { sorted, totalQty, totalAmount, maxQty: sorted[0]?.[1].qty || 1 }
+  }
 
   // ─── Helper: Reset button ──────────────────────────────────────────────
   const ResetBtn = ({ type, label }) => (
@@ -635,6 +707,131 @@ function Inner() {
     )
   }
 
+  // ─── Tab: Stores ──────────────────────────────────────────────────────
+  function renderStores() {
+    const { sorted, totalQty, totalAmount, maxQty } = getStoreStats()
+    const hasAmount = sorted.some(([, v]) => v.amount > 0)
+    const FILTER_BTNS = [
+      { id: 'week',   label: 'ອາທິດ' },
+      { id: 'month',  label: 'ເດືອນ' },
+      { id: 'custom', label: 'ກຳນົດເອງ' },
+    ]
+    const pendingNotifs = notifications.filter(n => n.status === 'pending').length
+
+    return (
+      <div className="space-y-5">
+        {/* Header + Notify button */}
+        <div className="flex items-center justify-between">
+          <SectionTitle><TrendingUp size={18} className="text-brand-yellow" />ສະຖິຕິຮ້ານຄ້າ</SectionTitle>
+          <button onClick={() => setShowNotifForm(true)}
+            className="relative flex items-center gap-1.5 text-xs text-blue-400 border border-blue-400/30 px-3 py-1.5 rounded-lg hover:bg-blue-900/20 transition-colors">
+            <Bell size={13} />ແຈ້ງ Distributor
+            {pendingNotifs > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                {pendingNotifs}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Date filter */}
+        <div className="flex gap-2">
+          {FILTER_BTNS.map(b => (
+            <button key={b.id} onClick={() => setStoreFilter(b.id)}
+              className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
+                storeFilter === b.id
+                  ? 'bg-brand-yellow text-dark-900'
+                  : 'bg-dark-700 text-gray-400 border border-dark-500'
+              }`}>
+              {b.label}
+            </button>
+          ))}
+        </div>
+        {storeFilter === 'custom' && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="field-label">ຈາກ</label>
+              <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} className="input-field text-sm" />
+            </div>
+            <div>
+              <label className="field-label">ຫາ</label>
+              <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} className="input-field text-sm" />
+            </div>
+          </div>
+        )}
+
+        {/* Summary */}
+        <div className="grid grid-cols-2 gap-3">
+          <StatCard label="ທຸກຮ້ານລວມ" value={totalQty.toLocaleString()} sub="ຕຸກ" icon="📦" color="yellow" />
+          <StatCard label="ຍອດເງິນລວມ" value={hasAmount ? Math.round(totalAmount / 1000) + 'K' : '-'} sub="₭" icon="💰" color="green" />
+        </div>
+
+        {/* Per-store list */}
+        {sorted.length === 0 ? <Empty icon="🏪" message="ບໍ່ມີຂໍ້ມູນໃນຊ່ວງທີ່ເລືອກ" /> : (
+          <div className="space-y-3">
+            {sorted.map(([name, s], idx) => (
+              <div key={name} className="card">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-bold w-5 h-5 rounded-full flex items-center justify-center ${
+                      idx === 0 ? 'bg-yellow-400 text-dark-900' :
+                      idx === 1 ? 'bg-gray-300 text-dark-900' :
+                      idx === 2 ? 'bg-orange-600 text-white' :
+                      'bg-dark-600 text-gray-400'
+                    }`}>{idx + 1}</span>
+                    <p className="text-white font-semibold text-sm">{name}</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-brand-yellow font-bold text-lg">{s.qty.toLocaleString()} <span className="text-xs text-gray-400 font-normal">ຕຸກ</span></p>
+                    {s.amount > 0 && <p className="text-green-400 text-xs">{s.amount.toLocaleString()} ₭</p>}
+                  </div>
+                </div>
+
+                {/* Visual bar */}
+                <div className="w-full bg-dark-600 rounded-full h-2 mb-2">
+                  <div
+                    className="bg-brand-yellow h-2 rounded-full transition-all"
+                    style={{ width: `${Math.max(4, (s.qty / maxQty) * 100)}%` }}
+                  />
+                </div>
+
+                <div className="flex justify-between text-xs text-gray-500">
+                  <span>📋 {s.count} ລາຍການ</span>
+                  {s.lastDate && <span>ສົ່ງລ່າສຸດ: {fmtDate(s.lastDate)}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Sent notifications history */}
+        {notifications.length > 0 && (
+          <div>
+            <SectionTitle><Bell size={16} className="text-brand-yellow" />ປະຫວັດການແຈ້ງ</SectionTitle>
+            <div className="space-y-2">
+              {notifications.slice(0, 10).map(n => (
+                <div key={n.id} className={`card text-sm ${n.status === 'acknowledged' ? 'opacity-60' : 'border-blue-400/20'}`}>
+                  <div className="flex justify-between items-start">
+                    <p className="text-white flex-1 pr-2">{n.message}</p>
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${n.status === 'acknowledged' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'}`}>
+                      {n.status === 'acknowledged' ? '✅ ຮັບແລ້ວ' : '⏳ ລໍຖ້າ'}
+                    </span>
+                  </div>
+                  <p className="text-gray-500 text-xs mt-1">
+                    {n.assigned_to
+                      ? `➜ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'}`
+                      : '➜ ທຸກ Distributor'
+                    } · {fmtDateTime(n.created_at)}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
   // ─── Tab: Export ───────────────────────────────────────────────────────
   function renderExport() {
     return (
@@ -673,6 +870,7 @@ function Inner() {
     distrib:    renderDistrib,
     sales:      renderSales,
     orders:     renderOrders,
+    stores:     renderStores,
     export:     renderExport,
   }
 
@@ -697,6 +895,11 @@ function Inner() {
                 {t.id === 'orders' && pendingOrders > 0 && (
                   <span className="absolute top-1 right-2 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                     {pendingOrders > 9 ? '9+' : pendingOrders}
+                  </span>
+                )}
+                {t.id === 'stores' && notifications.filter(n => n.status === 'pending').length > 0 && (
+                  <span className="absolute top-1 right-2 bg-blue-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
+                    {notifications.filter(n => n.status === 'pending').length}
                   </span>
                 )}
               </button>
@@ -753,6 +956,45 @@ function Inner() {
             <button type="button" onClick={() => setShowUserForm(false)} className="btn-secondary">ຍົກເລີກ</button>
             <button onClick={saveUser} disabled={savingUser} className="btn-primary">
               {savingUser ? <><div className="spinner border-dark-900" />ກຳລັງບັນທຶກ...</> : '✅ ບັນທຶກ'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Send Notification Modal ─────────────────────────────────────── */}
+      <Modal open={showNotifForm} onClose={() => setShowNotifForm(false)} title="📨 ແຈ້ງ Distributor ຮັບສິນຄ້າ">
+        <div className="space-y-4">
+          <p className="text-gray-400 text-sm">ສົ່ງຂໍ້ຄວາມຫາ Distributor ເພື່ອໃຫ້ເຂົ້າມາຮັບສິນຄ້າ</p>
+          <div>
+            <label className="field-label">ສົ່ງຫາ Distributor</label>
+            <select
+              value={notifForm.assignedTo}
+              onChange={e => setNotifForm(f => ({ ...f, assignedTo: e.target.value }))}
+              className="select-field"
+            >
+              <option value="">ທຸກ Distributor (Broadcast)</option>
+              {users.filter(u => u.role === 'distributor').map(u => (
+                <option key={u.id} value={u.id}>{u.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="field-label">ຂໍ້ຄວາມ *</label>
+            <textarea
+              value={notifForm.message}
+              onChange={e => setNotifForm(f => ({ ...f, message: e.target.value }))}
+              placeholder="ຕົວຢ່າງ: ສິນຄ້າ 500 ຕຸກ ພ້ອມແລ້ວ ກະລຸນາເຂົ້າມາຮັບ..."
+              rows={3}
+              className="input-field resize-none"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <button type="button" onClick={() => setShowNotifForm(false)} className="btn-secondary">ຍົກເລີກ</button>
+            <button onClick={sendNotification} disabled={sendingNotif}
+              className="flex items-center justify-center gap-2 btn-primary">
+              {sendingNotif
+                ? <><div className="spinner border-dark-900" />ກຳລັງສົ່ງ...</>
+                : <><Send size={16} />ສົ່ງແຈ້ງ</>}
             </button>
           </div>
         </div>
