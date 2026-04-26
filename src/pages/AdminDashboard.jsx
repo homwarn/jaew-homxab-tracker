@@ -10,7 +10,7 @@ import {
   LayoutDashboard, Users, Factory, Truck, ShoppingBag, Download,
   Plus, Pencil, Trash2, Eye, EyeOff, Store, ChevronRight, Image,
   ClipboardList, CheckCircle, XCircle, RotateCcw, Edit3,
-  Bell, Send, TrendingUp
+  Bell, Send, TrendingUp, MapPin, Package
 } from 'lucide-react'
 
 // ─── Tab definitions ──────────────────────────────────────────────────────
@@ -39,7 +39,7 @@ function Inner() {
   const [loading, setLoading]     = useState(true)
   const [exporting, setExporting] = useState(false)
 
-  // Data
+  // Core data
   const [products, setProducts]     = useState([])
   const [users, setUsers]           = useState([])
   const [production, setProduction] = useState([])
@@ -48,7 +48,11 @@ function Inner() {
   const [orders, setOrders]         = useState([])
   const [stockMap, setStockMap]     = useState({})
 
-  // Detail modal state
+  // Stores + pricing
+  const [stores, setStores]           = useState([])
+  const [storePriceMap, setStorePriceMap] = useState({})  // { [store_id]: { [product_id]: unit_price } }
+
+  // Detail modal
   const [detail, setDetail]               = useState(null)
   const [detailImgs, setDetailImgs]       = useState({})
   const [loadingImg, setLoadingImg]       = useState(false)
@@ -57,20 +61,34 @@ function Inner() {
   const [savingDetail, setSavingDetail]   = useState(false)
 
   // Reset confirm
-  const [resetConfirm, setResetConfirm]   = useState(null) // { type, label }
+  const [resetConfirm, setResetConfirm]   = useState(null)
 
   // Notifications
-  const [notifications, setNotifications]   = useState([])
-  const [showNotifForm, setShowNotifForm]   = useState(false)
-  const [sendingNotif, setSendingNotif]     = useState(false)
-  const [notifForm, setNotifForm]           = useState({ assignedTo: '', message: '' })
+  const [notifications, setNotifications] = useState([])
+  const [showNotifForm, setShowNotifForm]  = useState(false)
+  const [sendingNotif, setSendingNotif]    = useState(false)
+  const [notifForm, setNotifForm] = useState({
+    assignedTo:   '',
+    storeId:      '',
+    storeName:    '',
+    storeMapsUrl: '',
+    items:        [],
+    message:      '',
+  })
 
   // Store stats filter
-  const [storeFilter, setStoreFilter]       = useState('month') // 'week'|'month'|'custom'
-  const [filterFrom, setFilterFrom]         = useState('')
-  const [filterTo, setFilterTo]             = useState('')
+  const [storeFilter, setStoreFilter] = useState('month')
+  const [filterFrom, setFilterFrom]   = useState('')
+  const [filterTo, setFilterTo]       = useState('')
 
-  // User form state
+  // Store management form
+  const [showStoreForm, setShowStoreForm] = useState(false)
+  const [editStore, setEditStore]         = useState(null)
+  const [savingStore, setSavingStore]     = useState(false)
+  const [deleteStoreConfirm, setDeleteStoreConfirm] = useState(null)
+  const [storeForm, setStoreForm] = useState({ name: '', maps_url: '', prices: {} })
+
+  // User form
   const [showUserForm, setShowUserForm]   = useState(false)
   const [editUser, setEditUser]           = useState(null)
   const [savingUser, setSavingUser]       = useState(false)
@@ -92,6 +110,8 @@ function Inner() {
         { data: s },
         { data: ord },
         { data: notifs },
+        { data: storeList },
+        { data: spList },
       ] = await Promise.all([
         supabase.from('products').select('*').order('type'),
         supabase.from('profiles').select('*').order('created_at'),
@@ -99,8 +119,14 @@ function Inner() {
         supabase.from('distribution').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('sales').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('orders').select('*, products(*)').order('created_at', { ascending: false }),
-        supabase.from('notifications').select('*, profiles!notifications_created_by_fkey(name)').order('created_at', { ascending: false }).limit(50),
+        supabase.from('notifications')
+          .select('*, profiles!notifications_created_by_fkey(name)')
+          .order('created_at', { ascending: false })
+          .limit(60),
+        supabase.from('stores').select('*').order('name'),
+        supabase.from('store_prices').select('*'),
       ])
+
       setProducts(prods || [])
       setUsers(u || [])
       setProduction(prod || [])
@@ -108,8 +134,17 @@ function Inner() {
       setSales(s || [])
       setOrders(ord || [])
       setNotifications(notifs || [])
+      setStores(storeList || [])
 
-      // ── Stock = ຜະລິດ − ກະຈາຍ (ຍອດຂາຍ ລາຍງານເທົ່ານັ້ນ, ບໍ່ຕັດ stock) ──
+      // Build store price map: { store_id: { product_id: unit_price } }
+      const spMap = {}
+      ;(spList || []).forEach(sp => {
+        if (!spMap[sp.store_id]) spMap[sp.store_id] = {}
+        spMap[sp.store_id][sp.product_id] = sp.unit_price
+      })
+      setStorePriceMap(spMap)
+
+      // Stock = produced − distributed
       const pm = {}, dm = {}
       ;(prod || []).forEach(r => { pm[r.product_id] = (pm[r.product_id] || 0) + r.quantity })
       ;(dist || []).forEach(r => { dm[r.product_id] = (dm[r.product_id] || 0) + r.quantity })
@@ -136,12 +171,14 @@ function Inner() {
   // ─── Realtime ─────────────────────────────────────────────────────────
   useEffect(() => {
     const ch = supabase
-      .channel('admin-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },   () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' }, () => load())
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },        () => load())
+      .channel('admin-realtime-v3')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'production' },    () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'distribution' },  () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sales' },         () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' },        () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'stores' },        () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'store_prices' },  () => load())
       .subscribe()
     return () => { supabase.removeChannel(ch) }
   }, [load])
@@ -179,9 +216,7 @@ function Inner() {
       load()
     } catch (err) {
       toast.error('ຜິດພາດ: ' + err.message)
-    } finally {
-      setSavingDetail(false)
-    }
+    } finally { setSavingDetail(false) }
   }
 
   async function saveDetailQty() {
@@ -199,12 +234,10 @@ function Inner() {
       load()
     } catch (err) {
       toast.error('ຜິດພາດ: ' + err.message)
-    } finally {
-      setSavingDetail(false)
-    }
+    } finally { setSavingDetail(false) }
   }
 
-  // ─── Reset entire table ───────────────────────────────────────────────
+  // ─── Reset table ───────────────────────────────────────────────────────
   async function resetTable(type) {
     const tableMap = { production: 'production', distrib: 'distribution', sales: 'sales' }
     try {
@@ -218,30 +251,24 @@ function Inner() {
     }
   }
 
-  // ─── Toggle paid status ───────────────────────────────────────────────
+  // ─── Toggle paid ───────────────────────────────────────────────────────
   async function togglePaid(type, id, currentValue) {
     const tableMap = { production: 'production', distrib: 'distribution' }
     try {
-      const { error } = await supabase.from(tableMap[type])
-        .update({ is_paid: !currentValue })
-        .eq('id', id)
+      const { error } = await supabase.from(tableMap[type]).update({ is_paid: !currentValue }).eq('id', id)
       if (error) throw error
       load()
-    } catch (err) {
-      toast.error('ຜິດພາດ: ' + err.message)
-    }
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
 
-  // ─── Update order status ──────────────────────────────────────────────
+  // ─── Order status ──────────────────────────────────────────────────────
   async function updateOrderStatus(id, status) {
     try {
       const { error } = await supabase.from('orders').update({ status }).eq('id', id)
       if (error) throw error
       toast.success('ອັບເດດສຳເລັດ ✅')
       load()
-    } catch (err) {
-      toast.error('ຜິດພາດ: ' + err.message)
-    }
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
 
   // ─── User CRUD ────────────────────────────────────────────────────────
@@ -299,6 +326,134 @@ function Inner() {
     } catch (err) { toast.error('ລຶບຜິດພາດ: ' + err.message) }
   }
 
+  // ─── Store CRUD ───────────────────────────────────────────────────────
+  function openCreateStore() {
+    setEditStore(null)
+    const defaultPrices = {}
+    products.forEach(p => { defaultPrices[p.id] = '' })
+    setStoreForm({ name: '', maps_url: '', prices: defaultPrices })
+    setShowStoreForm(true)
+  }
+  function openEditStore(store) {
+    setEditStore(store)
+    const prices = {}
+    products.forEach(p => {
+      prices[p.id] = String(storePriceMap[store.id]?.[p.id] ?? '')
+    })
+    setStoreForm({ name: store.name, maps_url: store.maps_url || '', prices })
+    setShowStoreForm(true)
+  }
+  async function saveStore() {
+    if (!storeForm.name.trim()) { toast.error('ໃສ່ຊື່ຮ້ານ'); return }
+    setSavingStore(true)
+    try {
+      let storeId
+      if (editStore) {
+        const { error } = await supabase.from('stores').update({
+          name:     storeForm.name.trim(),
+          maps_url: storeForm.maps_url.trim() || null,
+        }).eq('id', editStore.id)
+        if (error) throw error
+        storeId = editStore.id
+      } else {
+        const { data, error } = await supabase.from('stores').insert({
+          name:     storeForm.name.trim(),
+          maps_url: storeForm.maps_url.trim() || null,
+        }).select().single()
+        if (error) throw error
+        storeId = data.id
+      }
+
+      // Upsert prices for each product
+      const priceRows = products.map(p => ({
+        store_id:   storeId,
+        product_id: p.id,
+        unit_price: parseFloat(storeForm.prices[p.id]) || 0,
+      }))
+      if (priceRows.length > 0) {
+        const { error: priceErr } = await supabase
+          .from('store_prices')
+          .upsert(priceRows, { onConflict: 'store_id,product_id' })
+        if (priceErr) throw priceErr
+      }
+
+      toast.success(editStore ? 'ແກ້ໄຂຮ້ານສຳເລັດ ✅' : 'ເພີ່ມຮ້ານສຳເລັດ ✅')
+      setShowStoreForm(false)
+      load()
+    } catch (err) {
+      toast.error(err.message.includes('unique') ? 'ມີຊື່ຮ້ານນີ້ແລ້ວ' : 'ຜິດພາດ: ' + err.message)
+    } finally { setSavingStore(false) }
+  }
+  async function deleteStore(storeId) {
+    try {
+      const { error } = await supabase.from('stores').delete().eq('id', storeId)
+      if (error) throw error
+      toast.success('ລຶບຮ້ານສຳເລັດ')
+      setDeleteStoreConfirm(null)
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── Notification form: select store → auto-fill items ─────────────────
+  function handleNotifStoreChange(storeId) {
+    const store   = stores.find(s => s.id === storeId)
+    const prices  = storePriceMap[storeId] || {}
+    const items   = products.map(p => ({
+      product_id:   p.id,
+      product_name: `${p.type} ${p.size}`,
+      quantity:     '',
+      unit_price:   prices[p.id] !== undefined ? String(prices[p.id]) : '',
+    }))
+    setNotifForm(f => ({
+      ...f,
+      storeId,
+      storeName:    store?.name     || '',
+      storeMapsUrl: store?.maps_url || '',
+      items,
+    }))
+  }
+
+  function updateNotifItem(i, field, val) {
+    setNotifForm(f => ({
+      ...f,
+      items: f.items.map((it, idx) => idx === i ? { ...it, [field]: val } : it),
+    }))
+  }
+
+  // ─── Send notification ─────────────────────────────────────────────────
+  async function sendNotification() {
+    if (!notifForm.storeId)  { toast.error('ເລືອກຮ້ານຄ້າ'); return }
+    const validItems = notifForm.items.filter(i => parseInt(i.quantity) > 0)
+    if (!validItems.length)  { toast.error('ໃສ່ຈຳນວນສິນຄ້າຢ່າງໜ້ອຍ 1 ລາຍການ'); return }
+
+    setSendingNotif(true)
+    try {
+      const { error } = await supabase.from('notifications').insert({
+        type:          'pickup',
+        message:       notifForm.message.trim() || `ກະລຸນາສົ່ງສິນຄ້າໄປ ${notifForm.storeName}`,
+        assigned_to:   notifForm.assignedTo || null,
+        store_id:      notifForm.storeId,
+        store_name:    notifForm.storeName,
+        store_maps_url: notifForm.storeMapsUrl || null,
+        items:         validItems.map(i => ({
+          product_id:   i.product_id,
+          product_name: i.product_name,
+          quantity:     parseInt(i.quantity),
+          unit_price:   parseFloat(i.unit_price) || 0,
+        })),
+        created_by: user.id,
+        status:     'pending',
+      })
+      if (error) throw error
+      toast.success('ສົ່ງຄຳສັ່ງ Distributor ສຳເລັດ ✅')
+      setShowNotifForm(false)
+      setNotifForm({ assignedTo: '', storeId: '', storeName: '', storeMapsUrl: '', items: [], message: '' })
+      load()
+    } catch (err) {
+      toast.error('ຜິດພາດ: ' + err.message)
+    } finally { setSendingNotif(false) }
+  }
+
   async function handleExport() {
     setExporting(true)
     try {
@@ -320,37 +475,12 @@ function Inner() {
   const totalSold        = sales.reduce((s, r) => s + (r.quantity || 0), 0)
   const totalRemaining   = Object.values(stockMap).reduce((s, v) => s + v.remaining, 0)
   const pendingOrders    = orders.filter(o => o.status === 'pending').length
+  const cashDist         = distrib.filter(r => r.payment_method === 'cash')
+  const transferDist     = distrib.filter(r => r.payment_method === 'transfer')
+  const cashQty          = cashDist.reduce((s, r) => s + r.quantity, 0)
+  const transferQty      = transferDist.reduce((s, r) => s + r.quantity, 0)
 
-  const cashDist     = distrib.filter(r => r.payment_method === 'cash')
-  const transferDist = distrib.filter(r => r.payment_method === 'transfer')
-  const cashQty      = cashDist.reduce((s, r) => s + r.quantity, 0)
-  const transferQty  = transferDist.reduce((s, r) => s + r.quantity, 0)
-
-  // ─── Send notification to distributor ─────────────────────────────────
-  async function sendNotification() {
-    if (!notifForm.message.trim()) { toast.error('ໃສ່ຂໍ້ຄວາມ'); return }
-    setSendingNotif(true)
-    try {
-      const { error } = await supabase.from('notifications').insert({
-        type:        'pickup',
-        message:     notifForm.message.trim(),
-        assigned_to: notifForm.assignedTo || null,
-        created_by:  user.id,
-        status:      'pending',
-      })
-      if (error) throw error
-      toast.success('ສົ່ງແຈ້ງ Distributor ສຳເລັດ ✅')
-      setShowNotifForm(false)
-      setNotifForm({ assignedTo: '', message: '' })
-      load()
-    } catch (err) {
-      toast.error('ຜິດພາດ: ' + err.message)
-    } finally {
-      setSendingNotif(false)
-    }
-  }
-
-  // ─── Store statistics calculation ─────────────────────────────────────
+  // ─── Store stats ───────────────────────────────────────────────────────
   function getStoreStats() {
     const now = new Date()
     let startDate, endDate = now
@@ -376,9 +506,12 @@ function Inner() {
       if (!map[key].lastDate || r.created_at > map[key].lastDate) map[key].lastDate = r.created_at
     })
     const sorted = Object.entries(map).sort((a, b) => b[1].qty - a[1].qty)
-    const totalQty    = sorted.reduce((s, [, v]) => s + v.qty,    0)
-    const totalAmount = sorted.reduce((s, [, v]) => s + v.amount, 0)
-    return { sorted, totalQty, totalAmount, maxQty: sorted[0]?.[1].qty || 1 }
+    return {
+      sorted,
+      totalQty:    sorted.reduce((s, [, v]) => s + v.qty,    0),
+      totalAmount: sorted.reduce((s, [, v]) => s + v.amount, 0),
+      maxQty:      sorted[0]?.[1].qty || 1,
+    }
   }
 
   // ─── Helper: Reset button ──────────────────────────────────────────────
@@ -391,7 +524,7 @@ function Inner() {
     </button>
   )
 
-  // ─── Helper: Paid toggle button ────────────────────────────────────────
+  // ─── Helper: Paid toggle ───────────────────────────────────────────────
   const PaidBtn = ({ type, id, isPaid }) => (
     <button
       onClick={e => { e.stopPropagation(); togglePaid(type, id, isPaid) }}
@@ -412,10 +545,10 @@ function Inner() {
         <div>
           <SectionTitle>📊 ສະຫຼຸບລວມ</SectionTitle>
           <div className="grid grid-cols-2 gap-3">
-            <StatCard label="ຜະລິດທັງໝົດ"   value={totalProduced.toLocaleString()}    sub="ຕຸກ" icon="🏭" color="yellow" />
-            <StatCard label="ກະຈາຍທັງໝົດ"   value={totalDistributed.toLocaleString()} sub="ຕຸກ" icon="🚚" color="blue" />
-            <StatCard label="ຍອດຂາຍ (ລາຍງານ)" value={totalSold.toLocaleString()}      sub="ຕຸກ" icon="🛒" color="green" />
-            <StatCard label="Stock ຄ້າງສາງ"  value={totalRemaining.toLocaleString()}   sub="ຕຸກ" icon="📦" color={totalRemaining < 0 ? 'red' : 'white'} />
+            <StatCard label="ຜະລິດທັງໝົດ"     value={totalProduced.toLocaleString()}    sub="ຕຸກ" icon="🏭" color="yellow" />
+            <StatCard label="ກະຈາຍທັງໝົດ"     value={totalDistributed.toLocaleString()} sub="ຕຸກ" icon="🚚" color="blue" />
+            <StatCard label="ຍອດຂາຍ (ລາຍງານ)" value={totalSold.toLocaleString()}        sub="ຕຸກ" icon="🛒" color="green" />
+            <StatCard label="Stock ຄ້າງສາງ"    value={totalRemaining.toLocaleString()}   sub="ຕຸກ" icon="📦" color={totalRemaining < 0 ? 'red' : 'white'} />
           </div>
         </div>
 
@@ -489,10 +622,10 @@ function Inner() {
                   </div>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      u.role === 'admin' ? 'bg-brand-yellow/20 text-brand-yellow' :
-                      u.role === 'producer' ? 'bg-orange-900/30 text-orange-400' :
+                      u.role === 'admin'       ? 'bg-brand-yellow/20 text-brand-yellow' :
+                      u.role === 'producer'    ? 'bg-orange-900/30 text-orange-400' :
                       u.role === 'distributor' ? 'bg-blue-900/30 text-blue-400' :
-                      'bg-green-900/30 text-green-400'
+                                                 'bg-green-900/30 text-green-400'
                     }`}>{ROLE_LABELS[u.role]}</span>
                     <button onClick={() => openEditUser(u)} className="p-2 text-gray-400 hover:text-brand-yellow"><Pencil size={16} /></button>
                     <button onClick={() => setDeleteConfirm(u)} className="p-2 text-gray-400 hover:text-red-400"><Trash2 size={16} /></button>
@@ -530,10 +663,7 @@ function Inner() {
                     <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination === 'retail' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
                       {r.destination === 'retail' ? 'ຮ້ານດາດ' : 'ສົ່ງ'}
                     </span>
-                    {/* Paid toggle — ສະເພາະ ຮ້ານດາດ */}
-                    {r.destination === 'retail' && (
-                      <PaidBtn type="production" id={r.id} isPaid={r.is_paid} />
-                    )}
+                    {r.destination === 'retail' && <PaidBtn type="production" id={r.id} isPaid={r.is_paid} />}
                     <ChevronRight size={15} className="text-gray-500" />
                   </div>
                 </div>
@@ -637,9 +767,7 @@ function Inner() {
           <div className="flex justify-between items-start">
             <div className="flex-1 min-w-0">
               <p className="text-white font-medium text-sm">{o.products?.type} {o.products?.size}</p>
-              <p className="text-gray-400 text-xs flex items-center gap-1">
-                <Store size={11} />{seller?.store_name || seller?.name || 'Unknown'}
-              </p>
+              <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{seller?.store_name || seller?.name || 'Unknown'}</p>
               <p className="text-gray-400 text-xs">👤 {seller?.name || 'Unknown'}</p>
               <p className="text-gray-500 text-xs">{fmtDateTime(o.created_at)}</p>
               {o.notes && <p className="text-gray-500 text-xs mt-0.5">📝 {o.notes}</p>}
@@ -651,7 +779,6 @@ function Inner() {
               </span>
             </div>
           </div>
-          {/* Action buttons */}
           <div className="flex gap-2 mt-3 pt-3 border-t border-dark-500">
             {o.status === 'pending' && (
               <button onClick={() => updateOrderStatus(o.id, 'confirmed')}
@@ -683,9 +810,7 @@ function Inner() {
           <>
             {byStatus.pending.length > 0 && (
               <div>
-                <p className="text-yellow-400 text-xs font-semibold mb-2 flex items-center gap-1">
-                  🕐 ລໍຖ້າ ({byStatus.pending.length})
-                </p>
+                <p className="text-yellow-400 text-xs font-semibold mb-2">🕐 ລໍຖ້າ ({byStatus.pending.length})</p>
                 <div className="space-y-2">{byStatus.pending.map(o => <OrderCard key={o.id} o={o} />)}</div>
               </div>
             )}
@@ -707,7 +832,7 @@ function Inner() {
     )
   }
 
-  // ─── Tab: Stores ──────────────────────────────────────────────────────
+  // ─── Tab: Stores ───────────────────────────────────────────────────────
   function renderStores() {
     const { sorted, totalQty, totalAmount, maxQty } = getStoreStats()
     const hasAmount = sorted.some(([, v]) => v.amount > 0)
@@ -719,13 +844,73 @@ function Inner() {
     const pendingNotifs = notifications.filter(n => n.status === 'pending').length
 
     return (
-      <div className="space-y-5">
-        {/* Header + Notify button */}
+      <div className="space-y-6">
+
+        {/* ── Store Management ── */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle><Store size={18} className="text-brand-yellow" />ຈັດການຮ້ານຄ້າ</SectionTitle>
+            <button onClick={openCreateStore} className="btn-primary px-3 py-2 text-sm">
+              <Plus size={15} />ເພີ່ມຮ້ານ
+            </button>
+          </div>
+
+          {stores.length === 0 ? (
+            <Empty icon="🏪" message="ຍັງບໍ່ມີຮ້ານ — ກົດ ເພີ່ມຮ້ານ ດ້ານເທິງ" />
+          ) : (
+            <div className="space-y-2">
+              {stores.map(store => {
+                const prices = storePriceMap[store.id] || {}
+                return (
+                  <div key={store.id} className="card">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-semibold text-sm">{store.name}</p>
+                        {store.maps_url && (
+                          <a href={store.maps_url} target="_blank" rel="noopener noreferrer"
+                            className="text-blue-400 text-xs flex items-center gap-1 mt-0.5 hover:text-blue-300">
+                            <MapPin size={11} /> ເປີດ Maps
+                          </a>
+                        )}
+                        {/* Price badges */}
+                        {products.length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-1.5">
+                            {products.map(p => (
+                              <span key={p.id} className={`text-xs px-2 py-0.5 rounded-full ${
+                                prices[p.id]
+                                  ? 'bg-green-900/30 text-green-400 border border-green-400/20'
+                                  : 'bg-dark-700 text-gray-500'
+                              }`}>
+                                {p.type} {p.size}: {prices[p.id] ? Number(prices[p.id]).toLocaleString('lo-LA') + ' ₭' : '—'}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <button onClick={() => openEditStore(store)} className="p-2 text-gray-400 hover:text-brand-yellow">
+                          <Pencil size={15} />
+                        </button>
+                        <button onClick={() => setDeleteStoreConfirm(store)} className="p-2 text-gray-400 hover:text-red-400">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* ── Send Notification button ── */}
         <div className="flex items-center justify-between">
-          <SectionTitle><TrendingUp size={18} className="text-brand-yellow" />ສະຖິຕິຮ້ານຄ້າ</SectionTitle>
-          <button onClick={() => setShowNotifForm(true)}
-            className="relative flex items-center gap-1.5 text-xs text-blue-400 border border-blue-400/30 px-3 py-1.5 rounded-lg hover:bg-blue-900/20 transition-colors">
-            <Bell size={13} />ແຈ້ງ Distributor
+          <SectionTitle><TrendingUp size={18} className="text-brand-yellow" />ສະຖິຕິການກະຈາຍ</SectionTitle>
+          <button
+            onClick={() => setShowNotifForm(true)}
+            className="relative flex items-center gap-1.5 text-xs text-blue-400 border border-blue-400/30 px-3 py-1.5 rounded-lg hover:bg-blue-900/20 transition-colors"
+          >
+            <Bell size={13} />ສ້າງຄຳສັ່ງ
             {pendingNotifs > 0 && (
               <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
                 {pendingNotifs}
@@ -739,9 +924,7 @@ function Inner() {
           {FILTER_BTNS.map(b => (
             <button key={b.id} onClick={() => setStoreFilter(b.id)}
               className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                storeFilter === b.id
-                  ? 'bg-brand-yellow text-dark-900'
-                  : 'bg-dark-700 text-gray-400 border border-dark-500'
+                storeFilter === b.id ? 'bg-brand-yellow text-dark-900' : 'bg-dark-700 text-gray-400 border border-dark-500'
               }`}>
               {b.label}
             </button>
@@ -766,7 +949,7 @@ function Inner() {
           <StatCard label="ຍອດເງິນລວມ" value={hasAmount ? Math.round(totalAmount / 1000) + 'K' : '-'} sub="₭" icon="💰" color="green" />
         </div>
 
-        {/* Per-store list */}
+        {/* Per-store stats */}
         {sorted.length === 0 ? <Empty icon="🏪" message="ບໍ່ມີຂໍ້ມູນໃນຊ່ວງທີ່ເລືອກ" /> : (
           <div className="space-y-3">
             {sorted.map(([name, s], idx) => (
@@ -777,7 +960,7 @@ function Inner() {
                       idx === 0 ? 'bg-yellow-400 text-dark-900' :
                       idx === 1 ? 'bg-gray-300 text-dark-900' :
                       idx === 2 ? 'bg-orange-600 text-white' :
-                      'bg-dark-600 text-gray-400'
+                                  'bg-dark-600 text-gray-400'
                     }`}>{idx + 1}</span>
                     <p className="text-white font-semibold text-sm">{name}</p>
                   </div>
@@ -786,15 +969,10 @@ function Inner() {
                     {s.amount > 0 && <p className="text-green-400 text-xs">{s.amount.toLocaleString()} ₭</p>}
                   </div>
                 </div>
-
-                {/* Visual bar */}
                 <div className="w-full bg-dark-600 rounded-full h-2 mb-2">
-                  <div
-                    className="bg-brand-yellow h-2 rounded-full transition-all"
-                    style={{ width: `${Math.max(4, (s.qty / maxQty) * 100)}%` }}
-                  />
+                  <div className="bg-brand-yellow h-2 rounded-full transition-all"
+                    style={{ width: `${Math.max(4, (s.qty / maxQty) * 100)}%` }} />
                 </div>
-
                 <div className="flex justify-between text-xs text-gray-500">
                   <span>📋 {s.count} ລາຍການ</span>
                   {s.lastDate && <span>ສົ່ງລ່າສຸດ: {fmtDate(s.lastDate)}</span>}
@@ -804,25 +982,37 @@ function Inner() {
           </div>
         )}
 
-        {/* Sent notifications history */}
+        {/* Notification history */}
         {notifications.length > 0 && (
           <div>
-            <SectionTitle><Bell size={16} className="text-brand-yellow" />ປະຫວັດການແຈ້ງ</SectionTitle>
+            <SectionTitle><Bell size={16} className="text-brand-yellow" />ປະຫວັດຄຳສັ່ງ</SectionTitle>
             <div className="space-y-2">
-              {notifications.slice(0, 10).map(n => (
-                <div key={n.id} className={`card text-sm ${n.status === 'acknowledged' ? 'opacity-60' : 'border-blue-400/20'}`}>
-                  <div className="flex justify-between items-start">
-                    <p className="text-white flex-1 pr-2">{n.message}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${n.status === 'acknowledged' ? 'bg-green-900/30 text-green-400' : 'bg-yellow-900/30 text-yellow-400'}`}>
-                      {n.status === 'acknowledged' ? '✅ ຮັບແລ້ວ' : '⏳ ລໍຖ້າ'}
+              {notifications.slice(0, 12).map(n => (
+                <div key={n.id} className={`card text-sm ${n.status === 'delivered' ? 'opacity-50' : n.status === 'acknowledged' ? 'opacity-70' : 'border-blue-400/20'}`}>
+                  <div className="flex justify-between items-start gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold truncate">{n.store_name || n.message || '—'}</p>
+                      {n.items?.length > 0 && (
+                        <p className="text-gray-500 text-xs mt-0.5 flex items-center gap-1">
+                          <Package size={10} />
+                          {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
+                        </p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-1">
+                        {n.assigned_to
+                          ? `➜ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'}`
+                          : '➜ ທຸກ Distributor'
+                        } · {fmtDateTime(n.created_at)}
+                      </p>
+                    </div>
+                    <span className={`text-xs px-2 py-0.5 rounded-full shrink-0 ${
+                      n.status === 'delivered'   ? 'bg-green-900/30 text-green-400' :
+                      n.status === 'acknowledged' ? 'bg-blue-900/30 text-blue-400' :
+                                                    'bg-yellow-900/30 text-yellow-400'
+                    }`}>
+                      {n.status === 'delivered' ? '📦 ສົ່ງແລ້ວ' : n.status === 'acknowledged' ? '✅ ຮັບແລ້ວ' : '⏳ ລໍຖ້າ'}
                     </span>
                   </div>
-                  <p className="text-gray-500 text-xs mt-1">
-                    {n.assigned_to
-                      ? `➜ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'}`
-                      : '➜ ທຸກ Distributor'
-                    } · {fmtDateTime(n.created_at)}
-                  </p>
                 </div>
               ))}
             </div>
@@ -849,9 +1039,9 @@ function Inner() {
           <p className="text-gray-300 font-medium text-sm">ສະຫຼຸບຂໍ້ມູນ</p>
           {[
             { label: 'ການຜະລິດ', value: production.length, icon: '🏭' },
-            { label: 'ການກະຈາຍ', value: distrib.length,    icon: '🚚' },
-            { label: 'ການຂາຍ',  value: sales.length,       icon: '🛒' },
-            { label: 'ການສັ່ງ',  value: orders.length,      icon: '📋' },
+            { label: 'ການກະຈາຍ', value: distrib.length,   icon: '🚚' },
+            { label: 'ການຂາຍ',  value: sales.length,      icon: '🛒' },
+            { label: 'ການສັ່ງ',  value: orders.length,     icon: '📋' },
           ].map(row => (
             <div key={row.label} className="flex justify-between text-sm">
               <span className="text-gray-400">{row.icon} {row.label}</span>
@@ -883,7 +1073,7 @@ function Inner() {
       <div className="sticky top-[61px] z-30 bg-dark-800 border-b border-dark-500 overflow-x-auto">
         <div className="flex min-w-max">
           {TABS.map(t => {
-            const Icon = t.icon
+            const Icon   = t.icon
             const active = tab === t.id
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
@@ -961,10 +1151,145 @@ function Inner() {
         </div>
       </Modal>
 
-      {/* ── Send Notification Modal ─────────────────────────────────────── */}
-      <Modal open={showNotifForm} onClose={() => setShowNotifForm(false)} title="📨 ແຈ້ງ Distributor ຮັບສິນຄ້າ">
+      {/* ── Store Form Modal ────────────────────────────────────────────── */}
+      <Modal
+        open={showStoreForm}
+        onClose={() => setShowStoreForm(false)}
+        title={editStore ? '✏️ ແກ້ໄຂຮ້ານ' : '➕ ເພີ່ມຮ້ານໃໝ່'}
+      >
         <div className="space-y-4">
-          <p className="text-gray-400 text-sm">ສົ່ງຂໍ້ຄວາມຫາ Distributor ເພື່ອໃຫ້ເຂົ້າມາຮັບສິນຄ້າ</p>
+          <div>
+            <label className="field-label">ຊື່ຮ້ານ *</label>
+            <input
+              value={storeForm.name}
+              onChange={e => setStoreForm(f => ({ ...f, name: e.target.value }))}
+              placeholder="ຊື່ຮ້ານຄ້າ"
+              className="input-field"
+            />
+          </div>
+
+          <div>
+            <label className="field-label flex items-center gap-1.5">
+              <MapPin size={13} className="text-blue-400" /> Google Maps URL (ທາງເລືອກ)
+            </label>
+            <input
+              type="url"
+              value={storeForm.maps_url}
+              onChange={e => setStoreForm(f => ({ ...f, maps_url: e.target.value }))}
+              placeholder="https://maps.google.com/..."
+              className="input-field text-sm"
+            />
+            <p className="text-gray-500 text-xs mt-1">ໃສ່ link Google Maps ຂອງຮ້ານ ເພື່ອໃຫ້ Distributor Navigate ໄດ້</p>
+          </div>
+
+          {/* Per-product pricing */}
+          {products.length > 0 && (
+            <div className="space-y-2">
+              <label className="field-label flex items-center gap-1.5">
+                <Package size={13} className="text-brand-yellow" /> ລາຄາສິນຄ້າຂອງຮ້ານນີ້
+              </label>
+              <div className="space-y-2">
+                {products.map(p => (
+                  <div key={p.id} className="flex items-center gap-3 bg-dark-700 rounded-xl px-3 py-2">
+                    <span className="text-gray-300 text-sm flex-1">{p.type} {p.size}</span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="100"
+                        value={storeForm.prices[p.id] ?? ''}
+                        onChange={e => setStoreForm(f => ({
+                          ...f,
+                          prices: { ...f.prices, [p.id]: e.target.value },
+                        }))}
+                        placeholder="0"
+                        className="w-28 bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-white text-sm text-right"
+                      />
+                      <span className="text-gray-400 text-xs">₭/ຕຸກ</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-2 gap-3 pt-1">
+            <button type="button" onClick={() => setShowStoreForm(false)} className="btn-secondary">ຍົກເລີກ</button>
+            <button onClick={saveStore} disabled={savingStore} className="btn-primary">
+              {savingStore ? <><div className="spinner border-dark-900" />ກຳລັງບັນທຶກ...</> : '✅ ບັນທຶກ'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ── Send Notification Modal ─────────────────────────────────────── */}
+      <Modal open={showNotifForm} onClose={() => setShowNotifForm(false)} title="📦 ສ້າງຄຳສັ່ງສົ່ງສິນຄ້າ">
+        <div className="space-y-4">
+
+          {/* Store selector */}
+          <div>
+            <label className="field-label">ຮ້ານຄ້າ * (ສົ່ງໄປຮ້ານໃດ)</label>
+            <select
+              value={notifForm.storeId}
+              onChange={e => handleNotifStoreChange(e.target.value)}
+              className="select-field"
+            >
+              <option value="">-- ເລືອກຮ້ານ --</option>
+              {stores.map(s => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            {notifForm.storeMapsUrl && (
+              <a href={notifForm.storeMapsUrl} target="_blank" rel="noopener noreferrer"
+                className="text-blue-400 text-xs flex items-center gap-1 mt-1 hover:text-blue-300">
+                <MapPin size={11} /> ເບິ່ງ Maps
+              </a>
+            )}
+          </div>
+
+          {/* Items (qty per product) */}
+          {notifForm.items.length > 0 && (
+            <div className="space-y-2">
+              <label className="field-label flex items-center gap-1.5">
+                <Package size={13} className="text-brand-yellow" /> ລາຍການສິນຄ້າ (ໃສ່ 0 ເພື່ອຍົກເວັ້ນ)
+              </label>
+              {notifForm.items.map((item, i) => (
+                <div key={i} className="flex items-center gap-3 bg-dark-700 rounded-xl px-3 py-2">
+                  <span className="text-gray-300 text-sm flex-1">{item.product_name}</span>
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min="0"
+                        value={item.quantity}
+                        onChange={e => updateNotifItem(i, 'quantity', e.target.value)}
+                        placeholder="0"
+                        className="w-20 bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-brand-yellow font-bold text-sm text-right"
+                      />
+                      <span className="text-gray-500 text-xs ml-1">ຕຸກ</span>
+                    </div>
+                    <div>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="100"
+                        value={item.unit_price}
+                        onChange={e => updateNotifItem(i, 'unit_price', e.target.value)}
+                        placeholder="0"
+                        className="w-24 bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-green-400 text-sm text-right"
+                      />
+                      <span className="text-gray-500 text-xs ml-1">₭</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Distributor selector */}
           <div>
             <label className="field-label">ສົ່ງຫາ Distributor</label>
             <select
@@ -978,23 +1303,26 @@ function Inner() {
               ))}
             </select>
           </div>
+
+          {/* Optional message */}
           <div>
-            <label className="field-label">ຂໍ້ຄວາມ *</label>
+            <label className="field-label">ໝາຍເຫດ (ທາງເລືອກ)</label>
             <textarea
               value={notifForm.message}
               onChange={e => setNotifForm(f => ({ ...f, message: e.target.value }))}
-              placeholder="ຕົວຢ່າງ: ສິນຄ້າ 500 ຕຸກ ພ້ອມແລ້ວ ກະລຸນາເຂົ້າມາຮັບ..."
-              rows={3}
+              placeholder="ຂໍ້ຄວາມເພີ່ມເຕີມ..."
+              rows={2}
               className="input-field resize-none"
             />
           </div>
+
           <div className="grid grid-cols-2 gap-3 pt-1">
             <button type="button" onClick={() => setShowNotifForm(false)} className="btn-secondary">ຍົກເລີກ</button>
             <button onClick={sendNotification} disabled={sendingNotif}
               className="flex items-center justify-center gap-2 btn-primary">
               {sendingNotif
                 ? <><div className="spinner border-dark-900" />ກຳລັງສົ່ງ...</>
-                : <><Send size={16} />ສົ່ງແຈ້ງ</>}
+                : <><Send size={16} />ສົ່ງຄຳສັ່ງ</>}
             </button>
           </div>
         </div>
@@ -1007,6 +1335,17 @@ function Inner() {
         onConfirm={() => deleteUser(deleteConfirm?.id)}
         title="ລຶບ User"
         message={`ທ່ານຕ້ອງການລຶບ "${deleteConfirm?.name}" ແທ້ບໍ? ຂໍ້ມູນທັງໝົດຂອງ User ນີ້ຈະຖືກລຶບ.`}
+        confirmLabel="ລຶບ"
+        danger
+      />
+
+      {/* ── Delete Store Confirm ────────────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteStoreConfirm}
+        onClose={() => setDeleteStoreConfirm(null)}
+        onConfirm={() => deleteStore(deleteStoreConfirm?.id)}
+        title="ລຶບຮ້ານ"
+        message={`ທ່ານຕ້ອງການລຶບຮ້ານ "${deleteStoreConfirm?.name}" ແທ້ບໍ?`}
         confirmLabel="ລຶບ"
         danger
       />
@@ -1033,7 +1372,7 @@ function Inner() {
         }
       >
         {detail && (() => {
-          const r = detail.record
+          const r   = detail.record
           const Row = ({ label, value }) =>
             value !== undefined && value !== null && value !== '' ? (
               <div className="flex justify-between py-1.5 border-b border-dark-500 last:border-0">
@@ -1045,9 +1384,9 @@ function Inner() {
           return (
             <div className="space-y-4">
               <div className="card space-y-0 py-1">
-                <Row label="ສິນຄ້າ"   value={`${r.products?.type} ${r.products?.size}`} />
+                <Row label="ສິນຄ້າ" value={`${r.products?.type} ${r.products?.size}`} />
 
-                {/* ── Quantity (editable) ── */}
+                {/* Quantity (editable) */}
                 <div className="flex justify-between py-1.5 border-b border-dark-500">
                   <span className="text-gray-400 text-sm">ຈຳນວນ</span>
                   {editDetail ? (
@@ -1072,8 +1411,8 @@ function Inner() {
                   )}
                 </div>
 
-                <Row label="ຜູ້ບັນທຶກ"  value={users.find(u => u.id === r.created_by)?.name || 'Unknown'} />
-                <Row label="ວັນທີ"       value={fmtDateTime(r.created_at)} />
+                <Row label="ຜູ້ບັນທຶກ" value={users.find(u => u.id === r.created_by)?.name || 'Unknown'} />
+                <Row label="ວັນທີ"      value={fmtDateTime(r.created_at)} />
 
                 {detail.type === 'production' && (
                   <Row label="ປາຍທາງ" value={r.destination === 'retail' ? 'ຮ້ານດາດ' : 'ສົ່ງ'} />
@@ -1093,7 +1432,7 @@ function Inner() {
                 </>}
               </div>
 
-              {/* ── Images ── */}
+              {/* Images */}
               {loadingImg ? (
                 <div className="flex justify-center py-4"><Spinner size={28} /></div>
               ) : (
@@ -1113,7 +1452,7 @@ function Inner() {
                 </div>
               )}
 
-              {/* ── Actions ── */}
+              {/* Actions */}
               <div className="grid grid-cols-2 gap-3">
                 <button
                   onClick={() => { setDetail(null); setDetailImgs({}); setEditDetail(false) }}
