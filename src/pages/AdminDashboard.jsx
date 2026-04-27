@@ -166,9 +166,10 @@ function Inner() {
       })
       setStorePriceMap(spMap)
 
-      // Stock = produced − distributed
+      // Stock = ສະເພາະ ຂາຍສົ່ງ − ກະຈາຍ (ຮ້ານດາດ/ໝໍ້ ບໍ່ນັບໃນ stock)
       const pm = {}, dm = {}
-      ;(prod || []).forEach(r => { pm[r.product_id] = (pm[r.product_id] || 0) + r.quantity })
+      ;(prod || []).filter(r => r.destination !== 'retail')
+                   .forEach(r => { pm[r.product_id] = (pm[r.product_id] || 0) + r.quantity })
       ;(dist || []).forEach(r => { dm[r.product_id] = (dm[r.product_id] || 0) + r.quantity })
       const map = {}
       ;(prods || []).forEach(p => {
@@ -549,7 +550,9 @@ function Inner() {
   }
 
   // ─── Computed ─────────────────────────────────────────────────────────
-  const totalProduced    = production.reduce((s, r) => s + r.quantity, 0)
+  // ຜະລິດ ສາງ = ສະເພາະ ຂາຍສົ່ງ (ຮ້ານດາດ ບໍ່ນັບ)
+  const totalProduced    = production.filter(r => r.destination !== 'retail').reduce((s, r) => s + r.quantity, 0)
+  const totalRetail      = production.filter(r => r.destination === 'retail').reduce((s, r) => s + r.quantity, 0)
   const totalDistributed = distrib.reduce((s, r) => s + r.quantity, 0)
   const totalSold        = sales.reduce((s, r) => s + (r.quantity || 0), 0)
   const totalRemaining   = Object.values(stockMap).reduce((s, v) => s + v.remaining, 0)
@@ -623,11 +626,12 @@ function Inner() {
       <div className="space-y-6">
         <div>
           <SectionTitle>📊 ສະຫຼຸບລວມ</SectionTitle>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <StatCard label="ຜະລິດທັງໝົດ"     value={totalProduced.toLocaleString()}    sub="ຕຸກ" icon="🏭" color="yellow" />
-            <StatCard label="ກະຈາຍທັງໝົດ"     value={totalDistributed.toLocaleString()} sub="ຕຸກ" icon="🚚" color="blue" />
-            <StatCard label="ຍອດຂາຍ (ລາຍງານ)" value={totalSold.toLocaleString()}        sub="ຕຸກ" icon="🛒" color="green" />
-            <StatCard label="Stock ຄ້າງສາງ"    value={totalRemaining.toLocaleString()}   sub="ຕຸກ" icon="📦" color={totalRemaining < 0 ? 'red' : 'white'} />
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <StatCard label="ຜະລິດ (ຂາຍສົ່ງ)"  value={totalProduced.toLocaleString()}    sub="ຕຸກ"  icon="🏭" color="yellow" />
+            <StatCard label="ຜະລິດ (ຮ້ານດາດ)"  value={totalRetail.toLocaleString()}      sub="ໝໍ້"  icon="🏪" color="orange" />
+            <StatCard label="ກະຈາຍທັງໝົດ"       value={totalDistributed.toLocaleString()} sub="ຕຸກ"  icon="🚚" color="blue" />
+            <StatCard label="ຍອດຂາຍ (ລາຍງານ)"  value={totalSold.toLocaleString()}        sub="ຕຸກ"  icon="🛒" color="green" />
+            <StatCard label="Stock ຄ້າງສາງ"     value={totalRemaining.toLocaleString()}   sub="ຕຸກ"  icon="📦" color={totalRemaining < 0 ? 'red' : 'white'} />
           </div>
         </div>
 
@@ -653,7 +657,7 @@ function Inner() {
         </div>
 
         <div>
-          <SectionTitle>📦 Stock ຕໍ່ສິນຄ້າ</SectionTitle>
+          <SectionTitle>📦 Stock ສາງ (ຂາຍສົ່ງ — ຮ້ານດາດ ບໍ່ນັບ)</SectionTitle>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {Object.entries(stockMap).map(([id, s]) => (
               <div key={id} className="card">
@@ -729,7 +733,7 @@ function Inner() {
     return (
       <div>
         <div className="flex items-center justify-between mb-3">
-          <SectionTitle><Factory size={18} className="text-brand-yellow" />ການຜະລິດ ({production.length})</SectionTitle>
+          <SectionTitle><Factory size={18} className="text-brand-yellow" />ການຜະລິດ ({production.length}) · ຮ້ານດາດ=ໝໍ້ · ຂາຍສົ່ງ=ຕຸກ</SectionTitle>
           <ResetBtn type="production" label="ການຜະລິດ" />
         </div>
         {production.length === 0 ? <Empty icon="🏭" /> : (
@@ -744,9 +748,14 @@ function Inner() {
                     {r.image_url && <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>}
                   </button>
                   <div className="flex flex-col items-end gap-1 shrink-0">
-                    <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
+                    <p className="text-brand-yellow font-bold text-lg">
+                      {r.quantity}
+                      <span className="text-xs font-normal text-gray-400 ml-1">
+                        {r.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                      </span>
+                    </p>
                     <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination === 'retail' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
-                      {r.destination === 'retail' ? 'ຮ້ານດາດ' : 'ສົ່ງ'}
+                      {r.destination === 'retail' ? '🏪 ຮ້ານດາດ' : '🚚 ຂາຍສົ່ງ'}
                     </span>
                     {r.destination === 'retail' && <PaidBtn type="production" id={r.id} isPaid={r.is_paid} />}
                     <ChevronRight size={15} className="text-gray-500" />
@@ -1850,7 +1859,9 @@ function Inner() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-2">
-                      <span className="text-white text-sm font-medium">{r.quantity ?? '-'} ຕຸກ</span>
+                      <span className="text-white text-sm font-medium">
+                    {r.quantity ?? '-'} {detail.type === 'production' && r.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                  </span>
                       <button onClick={() => { setEditDetail(true); setEditQty(String(r.quantity ?? 0)) }}
                         className="p-1 text-gray-400 hover:text-brand-yellow">
                         <Edit3 size={14} />

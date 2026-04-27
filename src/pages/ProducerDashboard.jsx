@@ -46,19 +46,21 @@ function Inner() {
       ])
       setProducts(prods || [])
       setProduction(prod || [])
-      const total     = (prod || []).reduce((s, r) => s + r.quantity, 0)
+      // ຮ້ານດາດ = ໝໍ້ (ບໍ່ນັບໃນ stock ສາງ), ຂາຍສົ່ງ = ຕຸກ (ນັບໃນ stock)
       const retail    = (prod || []).filter(r => r.destination === 'retail').reduce((s, r) => s + r.quantity, 0)
-      const wholesale = (prod || []).filter(r => r.destination === 'wholesale').reduce((s, r) => s + r.quantity, 0)
-      setStats({ total, retail, wholesale })
+      const wholesale = (prod || []).filter(r => r.destination !== 'retail').reduce((s, r) => s + r.quantity, 0)
+      setStats({ retail, wholesale })
       const pm = {}; const dm = {}; const sm = {}
-      ;(prod  || []).forEach(r => { pm[r.product_id] = (pm[r.product_id] || 0) + r.quantity })
+      // pm = ສະເພາະ ຂາຍສົ່ງ ເທົ່ານັ້ນ → ນັບໃນ stock
+      ;(prod  || []).filter(r => r.destination !== 'retail')
+                    .forEach(r => { pm[r.product_id] = (pm[r.product_id] || 0) + r.quantity })
       ;(dist  || []).forEach(r => { dm[r.product_id] = (dm[r.product_id] || 0) + r.quantity })
       ;(sales || []).forEach(r => { sm[r.product_id] = (sm[r.product_id] || 0) + r.quantity })
       const map = {}
       ;(prods || []).forEach(p => {
         map[p.id] = {
           produced: pm[p.id] || 0, distributed: dm[p.id] || 0, sold: sm[p.id] || 0,
-          remaining: (pm[p.id]||0) - (dm[p.id]||0)  // ຍອດຂາຍ ເປັນລາຍງານເທົ່ານັ້ນ, ບໍ່ຕັດ stock
+          remaining: (pm[p.id]||0) - (dm[p.id]||0),
         }
       })
       setStockMap(map)
@@ -132,14 +134,14 @@ function Inner() {
           <>
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3 mb-6">
-              <StatCard label="ຜະລິດທັງໝົດ" value={stats.total.toLocaleString()} sub="ຕຸກ" icon="📦" color="yellow" />
-              <StatCard label="ຂື້ນຮ້ານດາດ"  value={stats.retail.toLocaleString()}    sub="ຕຸກ" icon="🏪" color="green" />
-              <StatCard label="ຂາຍສົ່ງ"       value={stats.wholesale.toLocaleString()} sub="ຕຸກ" icon="🚚" color="blue" />
-              <StatCard label="ລາຍການ"         value={production.length}               sub="ຄັ້ງ" icon="📋" color="white" />
+              <StatCard label="ຂາຍສົ່ງ (Stock)"  value={stats.wholesale.toLocaleString()} sub="ຕຸກ"  icon="🚚" color="yellow" />
+              <StatCard label="ຂື້ນຮ້ານດາດ"       value={stats.retail.toLocaleString()}    sub="ໝໍ້"  icon="🏪" color="green" />
+              <StatCard label="ລາຍການທັງໝົດ"       value={production.length}               sub="ຄັ້ງ" icon="📋" color="white" />
             </div>
 
-            {/* Stock per product */}
-            <SectionTitle><Boxes size={18} className="text-brand-yellow" />Stock ຄ້າງສາງ</SectionTitle>
+            {/* Stock per product — ສະເພາະ ຂາຍສົ່ງ (ຮ້ານດາດ ບໍ່ນັບ) */}
+            <SectionTitle><Boxes size={18} className="text-brand-yellow" />Stock ສາງ (ຂາຍສົ່ງ)</SectionTitle>
+            <p className="text-gray-500 text-xs mb-2 -mt-2">⚠️ ຮ້ານດາດ (ໝໍ້) ບໍ່ນັບໃນ Stock ສາງ</p>
             <div className="space-y-2 mb-6">
               {products.map(p => {
                 const s = stockMap[p.id] || {}
@@ -148,7 +150,7 @@ function Inner() {
                   <div key={p.id} className="card flex items-center justify-between">
                     <div>
                       <p className="text-white font-medium text-sm">{p.type} {p.size}</p>
-                      <p className="text-gray-500 text-xs">ຜະລິດ {s.produced||0} | ກະຈາຍ {s.distributed||0} | ຂາຍ {s.sold||0}</p>
+                      <p className="text-gray-500 text-xs">ຜະລິດ(ສົ່ງ) {s.produced||0} | ກະຈາຍ {s.distributed||0}</p>
                     </div>
                     <div className={`text-xl font-bold ${rem > 0 ? 'text-brand-yellow' : 'text-red-400'}`}>
                       {rem}<span className="text-xs font-normal text-gray-400 ml-1">ຕຸກ</span>
@@ -178,9 +180,14 @@ function Inner() {
                       </div>
                       <div className="text-right flex items-center gap-2">
                         <div>
-                          <p className="text-brand-yellow font-bold text-lg">{r.quantity.toLocaleString()}</p>
+                          <p className="text-brand-yellow font-bold text-lg">
+                            {r.quantity.toLocaleString()}
+                            <span className="text-xs font-normal text-gray-400 ml-1">
+                              {r.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                            </span>
+                          </p>
                           <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination==='retail'?'bg-green-900/40 text-green-400':'bg-blue-900/40 text-blue-400'}`}>
-                            {r.destination==='retail'?'ຮ້ານດາດ':'ຂາຍສົ່ງ'}
+                            {r.destination==='retail'?'🏪 ຮ້ານດາດ':'🚚 ຂາຍສົ່ງ'}
                           </span>
                         </div>
                         <ChevronRight size={16} className="text-gray-500" />
@@ -222,14 +229,19 @@ function Inner() {
                   {products.map(p => <option key={p.id} value={p.id}>{p.type} {p.size}</option>)}
                 </select>
                 {/* Quantity */}
-                <input
-                  type="number" inputMode="numeric" min="1"
-                  value={item.quantity}
-                  onChange={e => updateItem(i, 'quantity', e.target.value)}
-                  placeholder="ຈຳນວນ (ຕຸກ)"
-                  required
-                  className="input-field text-xl font-bold text-brand-yellow"
-                />
+                <div className="relative">
+                  <input
+                    type="number" inputMode="numeric" min="1"
+                    value={item.quantity}
+                    onChange={e => updateItem(i, 'quantity', e.target.value)}
+                    placeholder={`ຈຳນວນ (${item.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'})`}
+                    required
+                    className="input-field text-xl font-bold text-brand-yellow pr-14"
+                  />
+                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">
+                    {item.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                  </span>
+                </div>
                 {/* Destination */}
                 <div className="flex gap-2">
                   {[{val:'retail',label:'🏪 ຮ້ານດາດ'},{val:'wholesale',label:'🚚 ຂາຍສົ່ງ'}].map(opt => (
@@ -292,7 +304,9 @@ function Inner() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400 text-sm">ຈຳນວນ</span>
-                <span className="text-brand-yellow font-bold text-xl">{detail.quantity?.toLocaleString()} ຕຸກ</span>
+                <span className="text-brand-yellow font-bold text-xl">
+                  {detail.quantity?.toLocaleString()} {detail.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400 text-sm">ປາຍທາງ</span>
