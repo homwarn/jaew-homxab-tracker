@@ -130,7 +130,7 @@ function Inner() {
         supabase.from('sales').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('orders').select('*, products(*)').order('created_at', { ascending: false }),
         supabase.from('notifications')
-          .select('*, profiles!notifications_created_by_fkey(name)')
+          .select('*')
           .order('created_at', { ascending: false })
           .limit(60),
         supabase.from('stores').select('*').order('name'),
