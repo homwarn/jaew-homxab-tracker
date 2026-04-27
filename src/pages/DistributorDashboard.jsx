@@ -349,7 +349,7 @@ function Inner() {
               <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block" />
               ລໍຖ້າຮັບ ({pendingNotifs.length})
             </p>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {pendingNotifs.map(n => <NotifCard key={n.id} notif={n} />)}
             </div>
           </div>
@@ -362,7 +362,7 @@ function Inner() {
               <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
               ກົດຮັບແລ້ວ — ລໍຖ້າສົ່ງ ({ackedNotifs.length})
             </p>
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {ackedNotifs.map(n => <NotifCard key={n.id} notif={n} />)}
             </div>
           </div>
@@ -375,7 +375,7 @@ function Inner() {
               <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
               ສົ່ງສຳເລັດແລ້ວ ({deliveredNotifs.length})
             </p>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {deliveredNotifs.slice(0, 8).map(n => (
                 <div key={n.id} className="card opacity-60">
                   <div className="flex items-center gap-2">

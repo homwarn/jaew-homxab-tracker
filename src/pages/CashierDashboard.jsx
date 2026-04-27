@@ -295,7 +295,7 @@ function Inner() {
                 <p className="text-brand-yellow text-xs font-semibold mb-2 flex items-center gap-1.5">
                   <Layers size={13} />{catName} ({mats.length})
                 </p>
-                <div className="space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-2">
                   {mats.map(m => (
                     <div key={m.id} className={`card ${(m.quantity_in_stock || 0) < 1 ? 'border-red-500/30' : ''}`}>
                       <div className="flex items-start justify-between gap-2">
@@ -349,7 +349,7 @@ function Inner() {
         </button>
 
         {purchases.length === 0 ? <Empty icon="🛒" message="ຍັງບໍ່ມີການຊື້" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {purchases.map(p => (
               <div key={p.id} className="card">
                 <div className="flex justify-between items-start">
@@ -387,7 +387,7 @@ function Inner() {
         </button>
 
         {batches.length === 0 ? <Empty icon="🍳" message="ຍັງບໍ່ມີການຜະລິດ" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {batches.map(b => {
               const items = Array.isArray(b.items) ? b.items : []
               return (

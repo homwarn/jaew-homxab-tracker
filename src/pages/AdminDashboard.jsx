@@ -579,7 +579,7 @@ function Inner() {
       <div className="space-y-6">
         <div>
           <SectionTitle>📊 ສະຫຼຸບລວມ</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard label="ຜະລິດທັງໝົດ"     value={totalProduced.toLocaleString()}    sub="ຕຸກ" icon="🏭" color="yellow" />
             <StatCard label="ກະຈາຍທັງໝົດ"     value={totalDistributed.toLocaleString()} sub="ຕຸກ" icon="🚚" color="blue" />
             <StatCard label="ຍອດຂາຍ (ລາຍງານ)" value={totalSold.toLocaleString()}        sub="ຕຸກ" icon="🛒" color="green" />
@@ -596,7 +596,7 @@ function Inner() {
 
         <div>
           <SectionTitle>💰 ການຊຳລະ</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <StatCard label="ເງິນສົດ" value={cashQty.toLocaleString()}     sub={`${cashDist.length} ລາຍການ`}     icon="💵" color="green" />
             <StatCard label="ໂອນ"     value={transferQty.toLocaleString()} sub={`${transferDist.length} ລາຍການ`} icon="💳" color="blue" />
           </div>
@@ -604,7 +604,7 @@ function Inner() {
 
         <div>
           <SectionTitle>📦 Stock ຕໍ່ສິນຄ້າ</SectionTitle>
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             {Object.entries(stockMap).map(([id, s]) => (
               <div key={id} className="card">
                 <div className="flex items-center justify-between mb-2">
@@ -625,7 +625,7 @@ function Inner() {
 
         <div>
           <SectionTitle>👥 ຜູ້ໃຊ້ງານ</SectionTitle>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {['producer', 'distributor', 'seller', 'admin'].map(role => {
               const count = users.filter(u => u.role === role).length
               const icons = { producer: '🏭', distributor: '🚚', seller: '🛒', admin: '⚙️' }
@@ -646,7 +646,7 @@ function Inner() {
           <button onClick={openCreateUser} className="btn-primary px-4 py-2 text-sm"><Plus size={16} />ເພີ່ມ</button>
         </div>
         {users.length === 0 ? <Empty icon="👥" message="ຍັງບໍ່ມີຜູ້ໃຊ້" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {users.map(u => (
               <div key={u.id} className="card">
                 <div className="flex items-start justify-between">
@@ -683,7 +683,7 @@ function Inner() {
           <ResetBtn type="production" label="ການຜະລິດ" />
         </div>
         {production.length === 0 ? <Empty icon="🏭" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {production.map(r => (
               <div key={r.id} className="card">
                 <div className="flex justify-between items-start gap-2">
@@ -719,7 +719,7 @@ function Inner() {
           <ResetBtn type="distrib" label="ການກະຈາຍ" />
         </div>
         {distrib.length === 0 ? <Empty icon="🚚" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {distrib.map(r => (
               <div key={r.id} className="card">
                 <div className="flex justify-between items-start gap-2">
@@ -759,7 +759,7 @@ function Inner() {
         </div>
         <p className="text-gray-500 text-xs mb-3">⚠️ ຍອດຂາຍນີ້ ເປັນພຽງລາຍງານ — ບໍ່ຕັດ Stock</p>
         {sales.length === 0 ? <Empty icon="🛒" /> : (
-          <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {sales.map(r => (
               <button key={r.id} onClick={() => openDetail('sales', r)}
                 className="card w-full text-left hover:border-brand-yellow/40 transition-colors">
@@ -862,7 +862,7 @@ function Inner() {
           {pendingNotifs.length === 0 && ackedNotifs.length === 0 && deliveredNotifs.length === 0 ? (
             <Empty icon="📭" message="ຍັງບໍ່ມີຄຳສັ່ງ — ກົດ ສ້າງຄຳສັ່ງ ດ້ານເທິງ" />
           ) : (
-            <div className="space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {/* Pending notifications */}
               {pendingNotifs.map(n => (
                 <div key={n.id} className="card border-yellow-400/20 bg-yellow-900/5">
@@ -966,13 +966,13 @@ function Inner() {
               {byStatus.pending.length > 0 && (
                 <div className="mb-4">
                   <p className="text-yellow-400 text-xs font-semibold mb-2">🕐 ລໍຖ້າ ({byStatus.pending.length})</p>
-                  <div className="space-y-2">{byStatus.pending.map(o => <OrderCard key={o.id} o={o} />)}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.pending.map(o => <OrderCard key={o.id} o={o} />)}</div>
                 </div>
               )}
               {byStatus.confirmed.length > 0 && (
                 <div className="mb-4">
                   <p className="text-blue-400 text-xs font-semibold mb-2">✅ ຢືນຢັນ ({byStatus.confirmed.length})</p>
-                  <div className="space-y-2">{byStatus.confirmed.map(o => <OrderCard key={o.id} o={o} />)}</div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.confirmed.map(o => <OrderCard key={o.id} o={o} />)}</div>
                 </div>
               )}
               {byStatus.delivered.length > 0 && (
@@ -1115,7 +1115,7 @@ function Inner() {
           {stores.length === 0 ? (
             <Empty icon="🏪" message="ຍັງບໍ່ມີຮ້ານ — ກົດ ເພີ່ມຮ້ານ ດ້ານເທິງ" />
           ) : (
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
               {stores.map(store => {
                 const prices = storePriceMap[store.id] || {}
                 return (
@@ -1190,14 +1190,14 @@ function Inner() {
         )}
 
         {/* Summary */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="ທຸກຮ້ານລວມ" value={totalQty.toLocaleString()} sub="ຕຸກ" icon="📦" color="yellow" />
           <StatCard label="ຍອດເງິນລວມ" value={hasAmount ? Math.round(totalAmount / 1000) + 'K' : '-'} sub="₭" icon="💰" color="green" />
         </div>
 
         {/* Per-store stats */}
         {sorted.length === 0 ? <Empty icon="🏪" message="ບໍ່ມີຂໍ້ມູນໃນຊ່ວງທີ່ເລືອກ" /> : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {sorted.map(([name, s], idx) => (
               <div key={name} className="card">
                 <div className="flex items-start justify-between mb-2">
@@ -1275,17 +1275,60 @@ function Inner() {
     export:     renderExport,
   }
 
+  // ─── Tab badge helper ─────────────────────────────────────────────────
+  function tabBadge(id) {
+    if (id === 'orders') {
+      const total = pendingOrders + notifications.filter(n => n.status === 'pending').length
+      if (total > 0) return total
+    }
+    if (id === 'materials') {
+      const low = rawMaterials.filter(m => m.quantity_in_stock < 5).length
+      if (low > 0) return low
+    }
+    return null
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-900">
       <Header title="Admin Dashboard" subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ" />
 
-      {/* Tab Bar */}
-      <div className="sticky top-[61px] z-30 bg-dark-800 border-b border-dark-500 overflow-x-auto">
+      {/* ── Desktop Sidebar — lg+ only ─────────────────────────────────── */}
+      <aside className="hidden lg:flex lg:flex-col lg:fixed lg:top-[61px] lg:left-0 lg:bottom-0 lg:w-52 lg:z-20 lg:bg-dark-800 lg:border-r lg:border-dark-500">
+        <nav className="flex-1 py-2 overflow-y-auto">
+          {TABS.map(t => {
+            const Icon   = t.icon
+            const active = tab === t.id
+            const badge  = tabBadge(t.id)
+            const badgeColor = t.id === 'materials' ? 'bg-orange-500' : 'bg-red-500'
+            return (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium transition-colors text-left relative ${
+                  active
+                    ? 'bg-brand-yellow/10 text-brand-yellow border-r-2 border-brand-yellow'
+                    : 'text-gray-400 hover:text-gray-100 hover:bg-dark-700'
+                }`}>
+                <Icon size={17} />
+                <span className="flex-1">{t.label}</span>
+                {badge && (
+                  <span className={`${badgeColor} text-white text-[9px] rounded-full min-w-[18px] h-[18px] flex items-center justify-center font-bold px-1`}>
+                    {badge > 9 ? '9+' : badge}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </nav>
+      </aside>
+
+      {/* ── Mobile / Tablet Tab Bar — hidden on lg+ ───────────────────── */}
+      <div className="sticky top-[61px] z-30 bg-dark-800 border-b border-dark-500 overflow-x-auto lg:hidden">
         <div className="flex min-w-max">
           {TABS.map(t => {
             const Icon   = t.icon
             const active = tab === t.id
+            const badge  = tabBadge(t.id)
+            const badgeColor = t.id === 'materials' ? 'bg-orange-500' : 'bg-red-500'
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className={`relative flex flex-col items-center gap-0.5 px-4 py-2.5 text-xs font-medium transition-colors border-b-2 min-w-[64px] ${
@@ -1293,18 +1336,9 @@ function Inner() {
                 }`}>
                 <Icon size={18} />
                 <span>{t.label}</span>
-                {t.id === 'orders' && (() => {
-                  const pendingNotifCount = notifications.filter(n => n.status === 'pending').length
-                  const total = pendingOrders + pendingNotifCount
-                  return total > 0 ? (
-                    <span className="absolute top-1 right-2 bg-red-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                      {total > 9 ? '9+' : total}
-                    </span>
-                  ) : null
-                })()}
-                {t.id === 'materials' && rawMaterials.filter(m => m.quantity_in_stock < 5).length > 0 && (
-                  <span className="absolute top-1 right-2 bg-orange-500 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold">
-                    {rawMaterials.filter(m => m.quantity_in_stock < 5).length}
+                {badge && (
+                  <span className={`absolute top-1 right-2 ${badgeColor} text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center font-bold`}>
+                    {badge > 9 ? '9+' : badge}
                   </span>
                 )}
               </button>
@@ -1313,13 +1347,16 @@ function Inner() {
         </div>
       </div>
 
-      <Page>
-        {loading ? (
-          <div className="flex justify-center py-20"><Spinner size={36} /></div>
-        ) : (
-          <div className="animate-fade-in">{tabContent[tab]?.()}</div>
-        )}
-      </Page>
+      {/* ── Main content — offset by sidebar on lg+ ───────────────────── */}
+      <div className="lg:ml-52">
+        <Page>
+          {loading ? (
+            <div className="flex justify-center py-20"><Spinner size={36} /></div>
+          ) : (
+            <div className="animate-fade-in">{tabContent[tab]?.()}</div>
+          )}
+        </Page>
+      </div>
 
       {/* ── User Form Modal ─────────────────────────────────────────────── */}
       <Modal open={showUserForm} onClose={() => setShowUserForm(false)} title={editUser ? '✏️ ແກ້ໄຂ User' : '➕ ສ້າງ User ໃໝ່'}>

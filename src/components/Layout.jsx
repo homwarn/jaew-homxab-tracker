@@ -7,8 +7,8 @@ export function Header({ title, subtitle }) {
   const { profile, signOut } = useAuth()
 
   return (
-    <header className="sticky top-0 z-40 bg-dark-900/95 backdrop-blur-sm border-b border-dark-500 px-4 py-3 safe-top">
-      <div className="flex items-center justify-between max-w-lg mx-auto">
+    <header className="sticky top-0 z-40 bg-dark-900/95 backdrop-blur-sm border-b border-dark-500 px-4 md:px-6 py-3 safe-top">
+      <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
         <div className="flex items-center gap-3">
           <img src={logoImg} alt="Logo" className="h-9 w-9 rounded-xl object-cover" />
           <div>
@@ -16,14 +16,15 @@ export function Header({ title, subtitle }) {
             {subtitle && <p className="text-gray-400 text-xs mt-0.5">{subtitle}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 md:gap-3">
           <div className="text-right">
-            <p className="text-white text-xs font-medium leading-none">{profile?.name}</p>
+            <p className="text-white text-xs md:text-sm font-medium leading-none">{profile?.name}</p>
             <p className="text-gray-500 text-xs mt-0.5">{ROLE_LABELS[profile?.role]}</p>
           </div>
           <button
             onClick={signOut}
             className="p-2 rounded-xl bg-dark-600 text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"
+            title="ອອກຈາກລະບົບ"
           >
             <LogOut size={18} />
           </button>
@@ -36,7 +37,7 @@ export function Header({ title, subtitle }) {
 // ─── Page Wrapper ─────────────────────────────────────────────────────────
 export function Page({ children, className = '' }) {
   return (
-    <main className={`max-w-lg mx-auto px-4 py-4 pb-24 ${className}`}>
+    <main className={`max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 pb-24 lg:pb-10 ${className}`}>
       {children}
     </main>
   )
@@ -58,6 +59,7 @@ export function StatCard({ label, value, sub, color = 'yellow', icon }) {
     green:  'text-green-400',
     red:    'text-red-400',
     blue:   'text-blue-400',
+    orange: 'text-orange-400',
     white:  'text-white',
   }
   return (
@@ -66,7 +68,7 @@ export function StatCard({ label, value, sub, color = 'yellow', icon }) {
         <p className="text-gray-400 text-xs">{label}</p>
         {icon && <span className="text-xl">{icon}</span>}
       </div>
-      <p className={`text-2xl font-bold mt-1 ${colors[color]}`}>{value}</p>
+      <p className={`text-2xl font-bold mt-1 ${colors[color] ?? 'text-white'}`}>{value}</p>
       {sub && <p className="text-gray-500 text-xs">{sub}</p>}
     </div>
   )
@@ -93,16 +95,27 @@ export function Empty({ icon = '📋', message = 'ຍັງບໍ່ມີຂໍ
 }
 
 // ─── Modal ────────────────────────────────────────────────────────────────
+// Mobile: slides up from bottom (full-width bottom sheet)
+// Desktop md+: centered dialog
 export function Modal({ open, onClose, title, children }) {
   if (!open) return null
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center md:px-4"
+      onClick={onClose}
+    >
       <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" />
       <div
-        className="relative w-full max-w-lg bg-dark-800 rounded-t-3xl border-t border-dark-500 p-5 pb-8 animate-slide-up max-h-[90dvh] overflow-y-auto"
+        className="relative w-full max-w-lg bg-dark-800
+          rounded-t-3xl md:rounded-3xl
+          border-t md:border border-dark-500
+          p-5 pb-8 md:pb-6
+          animate-slide-up
+          max-h-[90dvh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
-        <div className="w-10 h-1 bg-dark-400 rounded-full mx-auto mb-4" />
+        {/* Drag handle — mobile only */}
+        <div className="md:hidden w-10 h-1 bg-dark-400 rounded-full mx-auto mb-4" />
         <h3 className="text-white font-bold text-lg mb-4">{title}</h3>
         {children}
       </div>

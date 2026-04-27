@@ -33,21 +33,26 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-brand-yellow text-dark-900 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply bg-brand-yellow text-dark-900 font-bold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-brand-yellow/90;
     min-height: 52px;
     font-size: 1rem;
   }
 
   .btn-secondary {
-    @apply bg-dark-600 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 border border-dark-400;
+    @apply bg-dark-600 text-white font-semibold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 border border-dark-400 hover:bg-dark-500;
     min-height: 52px;
     font-size: 1rem;
   }
 
   .btn-danger {
-    @apply bg-red-900/40 text-red-400 font-semibold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 border border-red-800;
+    @apply bg-red-900/40 text-red-400 font-semibold rounded-2xl flex items-center justify-center gap-2 transition-all active:scale-95 border border-red-800 hover:bg-red-900/60;
     min-height: 52px;
     font-size: 1rem;
+  }
+
+  @media (min-width: 768px) {
+    .btn-primary, .btn-secondary, .btn-danger { min-height: 44px; }
+    .input-field, .select-field { min-height: 44px; }
   }
 
   .card {
@@ -159,6 +164,15 @@ html { scroll-behavior: smooth; }
   gap: 8px;
   min-width: 280px;
   max-width: calc(100vw - 32px);
+}
+@media (min-width: 768px) {
+  .toast-container {
+    bottom: 24px;
+    left: auto;
+    right: 24px;
+    transform: none;
+    max-width: 360px;
+  }
 }
 
 .toast {
