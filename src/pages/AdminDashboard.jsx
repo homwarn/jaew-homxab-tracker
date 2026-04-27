@@ -88,6 +88,12 @@ function Inner() {
   const [filterFrom, setFilterFrom]   = useState('')
   const [filterTo, setFilterTo]       = useState('')
 
+  // Distribution records filter
+  const [distribFilter, setDistribFilter] = useState({ store: '', payMethod: '', isPaid: '', dateFrom: '', dateTo: '' })
+
+  // Single-record delete confirm
+  const [deleteSingleDistrib, setDeleteSingleDistrib] = useState(null)
+
   // Store management form
   const [showStoreForm, setShowStoreForm] = useState(false)
   const [editStore, setEditStore]         = useState(null)
@@ -284,7 +290,45 @@ function Inner() {
     try {
       const { error } = await supabase.from('orders').update({ status }).eq('id', id)
       if (error) throw error
+
+      // When confirming a seller order → auto-create distributor notification
+      if (status === 'confirmed') {
+        const order  = orders.find(o => o.id === id)
+        const seller = users.find(u => u.id === order?.created_by)
+        if (order && seller) {
+          const matchedStore = stores.find(s => s.name === seller.store_name)
+          const prices = matchedStore ? (storePriceMap[matchedStore.id] || {}) : {}
+          await supabase.from('notifications').insert({
+            type:           'pickup',
+            message:        `📋 ຄຳສັ່ງຈາກ Seller: ${seller.name}${seller.store_name ? ` (${seller.store_name})` : ''}`,
+            assigned_to:    null,
+            store_id:       matchedStore?.id || null,
+            store_name:     seller.store_name || seller.name || '—',
+            store_maps_url: matchedStore?.maps_url || null,
+            items: [{
+              product_id:   order.product_id,
+              product_name: `${order.products?.type} ${order.products?.size}`,
+              quantity:     order.quantity,
+              unit_price:   prices[order.product_id] || 0,
+            }],
+            created_by: user.id,
+            status:     'pending',
+          })
+        }
+      }
+
       toast.success('ອັບເດດສຳເລັດ ✅')
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── Delete single distrib record ─────────────────────────────────────
+  async function deleteDistribRecord(id) {
+    try {
+      const { error } = await supabase.from('distribution').delete().eq('id', id)
+      if (error) throw error
+      toast.success('ລຶບລາຍການສຳເລັດ ✅')
+      setDeleteSingleDistrib(null)
       load()
     } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
@@ -589,8 +633,14 @@ function Inner() {
 
         {pendingOrders > 0 && (
           <div className="card border-yellow-500/40 bg-yellow-900/10 cursor-pointer" onClick={() => setTab('orders')}>
-            <p className="text-yellow-400 font-semibold text-sm">🔔 ມີການສັ່ງສິນຄ້າລໍຖ້າ {pendingOrders} ລາຍການ</p>
+            <p className="text-yellow-400 font-semibold text-sm">🔔 ມີການສັ່ງຈາກ Seller ລໍຖ້າ {pendingOrders} ລາຍການ</p>
             <p className="text-yellow-400/70 underline text-xs mt-1">ກົດເພື່ອກວດ →</p>
+          </div>
+        )}
+        {notifications.filter(n => n.status === 'pending').length > 0 && (
+          <div className="card border-blue-500/40 bg-blue-900/10 cursor-pointer" onClick={() => setTab('distrib')}>
+            <p className="text-blue-400 font-semibold text-sm">📦 ຄຳສັ່ງ Distributor ລໍຖ້າ {notifications.filter(n => n.status === 'pending').length} ລາຍການ</p>
+            <p className="text-blue-400/70 underline text-xs mt-1">ກົດເພື່ອກວດ →</p>
           </div>
         )}
 
@@ -712,39 +762,270 @@ function Inner() {
 
   // ─── Tab: Distribution ─────────────────────────────────────────────────
   function renderDistrib() {
-    return (
-      <div>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle><Truck size={18} className="text-brand-yellow" />ການກະຈາຍ ({distrib.length})</SectionTitle>
-          <ResetBtn type="distrib" label="ການກະຈາຍ" />
+    const pendingNotifs   = notifications.filter(n => n.status === 'pending')
+    const ackedNotifs     = notifications.filter(n => n.status === 'acknowledged')
+    const deliveredNotifs = notifications.filter(n => n.status === 'delivered')
+
+    // Unique store names for filter dropdown
+    const storeOptions = [...new Set(distrib.map(r => r.store_name).filter(Boolean))].sort()
+
+    // Apply filters
+    const hasFilter = distribFilter.store || distribFilter.payMethod || distribFilter.isPaid || distribFilter.dateFrom || distribFilter.dateTo
+    const filtered = distrib.filter(r => {
+      if (distribFilter.store     && r.store_name      !== distribFilter.store)     return false
+      if (distribFilter.payMethod && r.payment_method  !== distribFilter.payMethod) return false
+      if (distribFilter.isPaid === 'paid'   && !r.is_paid) return false
+      if (distribFilter.isPaid === 'unpaid' &&  r.is_paid) return false
+      if (distribFilter.dateFrom) {
+        if (new Date(r.created_at) < new Date(distribFilter.dateFrom)) return false
+      }
+      if (distribFilter.dateTo) {
+        if (new Date(r.created_at) > new Date(distribFilter.dateTo + 'T23:59:59')) return false
+      }
+      return true
+    })
+    const unpaid = filtered.filter(r => !r.is_paid)
+    const paid   = filtered.filter(r =>  r.is_paid)
+
+    function DistribCard({ r }) {
+      return (
+        <div className="card">
+          <div className="flex justify-between items-start gap-2">
+            <button onClick={() => openDetail('distrib', r)} className="flex-1 text-left min-w-0">
+              <p className="text-white font-bold text-base leading-tight">{r.store_name || '—'}</p>
+              <p className="text-brand-yellow font-semibold text-sm mt-0.5">
+                {r.products?.type} {r.products?.size} × {r.quantity} ຕຸກ
+              </p>
+              <p className="text-gray-400 text-xs mt-1">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
+              <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
+              {(r.bill_image_url || r.slip_image_url || r.delivery_image_url) && (
+                <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>
+              )}
+            </button>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <span className={`text-xs px-2 py-0.5 rounded-full ${r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
+                {r.payment_method === 'cash' ? '💵 ສົດ' : '💳 ໂອນ'}
+              </span>
+              <PaidBtn type="distrib" id={r.id} isPaid={r.is_paid} />
+              <button
+                onClick={e => { e.stopPropagation(); setDeleteSingleDistrib(r) }}
+                className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-red-400 border border-red-400/20 hover:bg-red-900/20 transition-colors"
+              >
+                🗑 ລຶບ
+              </button>
+            </div>
+          </div>
         </div>
-        {distrib.length === 0 ? <Empty icon="🚚" /> : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {distrib.map(r => (
-              <div key={r.id} className="card">
-                <div className="flex justify-between items-start gap-2">
-                  <button onClick={() => openDetail('distrib', r)} className="flex-1 text-left min-w-0">
-                    <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
-                    <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{r.store_name}</p>
-                    <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
-                    <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
-                    {(r.bill_image_url || r.slip_image_url || r.delivery_image_url) && (
-                      <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>
-                    )}
-                  </button>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <p className="text-brand-yellow font-bold text-lg">{r.quantity}</p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
-                      {r.payment_method === 'cash' ? '💵 ສົດ' : '💳 ໂອນ'}
-                    </span>
-                    <PaidBtn type="distrib" id={r.id} isPaid={r.is_paid} />
-                    <ChevronRight size={15} className="text-gray-500" />
+      )
+    }
+
+    return (
+      <div className="space-y-6">
+
+        {/* ── Section 1: Distributor Commands (notifications) ── */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>
+              <Bell size={18} className="text-brand-yellow" />ຄຳສັ່ງ Distributor
+            </SectionTitle>
+            <button
+              onClick={() => setShowNotifForm(true)}
+              className="btn-primary px-3 py-2 text-sm flex items-center gap-1.5"
+            >
+              <Plus size={15} />ສ້າງຄຳສັ່ງ
+            </button>
+          </div>
+
+          {pendingNotifs.length === 0 && ackedNotifs.length === 0 && deliveredNotifs.length === 0 ? (
+            <Empty icon="📭" message="ຍັງບໍ່ມີຄຳສັ່ງ — ກົດ ສ້າງຄຳສັ່ງ ດ້ານເທິງ" />
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+              {pendingNotifs.map(n => (
+                <div key={n.id} className="card border-yellow-400/20 bg-yellow-900/5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block" />
+                        {n.store_name || n.message || '—'}
+                      </p>
+                      {n.items?.length > 0 && (
+                        <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-1">
+                          <Package size={10} />
+                          {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
+                        </p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-1">
+                        {n.assigned_to
+                          ? `➜ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'}`
+                          : '➜ ທຸກ Distributor'
+                        } · {fmtDateTime(n.created_at)}
+                      </p>
+                      {n.message?.includes('Seller') && (
+                        <p className="text-purple-400 text-xs mt-0.5">📋 ຈາກ Seller</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400">⏳ ລໍຖ້າ</span>
+                      <button onClick={() => handlePrintNotifInvoice(n)}
+                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600">
+                        <Printer size={10} />Invoice
+                      </button>
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              ))}
+
+              {ackedNotifs.map(n => (
+                <div key={n.id} className="card border-blue-400/20 bg-blue-900/5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm">{n.store_name || '—'}</p>
+                      {n.items?.length > 0 && (
+                        <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-1">
+                          <Package size={10} />
+                          {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
+                        </p>
+                      )}
+                      <p className="text-gray-500 text-xs mt-1">
+                        {n.assigned_to
+                          ? `✅ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'} ຮັບແລ້ວ`
+                          : '✅ ຮັບແລ້ວ'
+                        } · {fmtDateTime(n.created_at)}
+                      </p>
+                      {n.message?.includes('Seller') && (
+                        <p className="text-purple-400 text-xs mt-0.5">📋 ຈາກ Seller</p>
+                      )}
+                    </div>
+                    <div className="flex flex-col items-end gap-1 shrink-0">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">✅ ຮັບແລ້ວ</span>
+                      <button onClick={() => handlePrintNotifInvoice(n)}
+                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600">
+                        <Printer size={10} />Invoice
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {deliveredNotifs.slice(0, 5).map(n => (
+                <div key={n.id} className="card opacity-50 hover:opacity-80 transition-opacity">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-300 text-sm truncate">{n.store_name || n.message || '—'}</p>
+                      <p className="text-gray-500 text-xs">{fmtDateTime(n.created_at)}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400">📦 ສົ່ງແລ້ວ</span>
+                      <button onClick={() => handlePrintNotifInvoice(n)}
+                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600">
+                        <Printer size={10} />Invoice
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Section 2: Distribution Records ── */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <SectionTitle>
+              <Truck size={18} className="text-brand-yellow" />
+              ປະຫວັດການກະຈາຍ ({filtered.length}{hasFilter ? ` / ${distrib.length}` : ''})
+            </SectionTitle>
+            <ResetBtn type="distrib" label="ການກະຈາຍທັງໝົດ" />
           </div>
-        )}
+
+          {/* ── Filter bar ── */}
+          <div className="bg-dark-800 border border-dark-500 rounded-2xl p-3 mb-4 space-y-2">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              <div>
+                <label className="field-label text-xs">ຮ້ານ</label>
+                <select value={distribFilter.store}
+                  onChange={e => setDistribFilter(f => ({ ...f, store: e.target.value }))}
+                  className="select-field text-sm py-2">
+                  <option value="">ທຸກຮ້ານ</option>
+                  {storeOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="field-label text-xs">ການຊຳລະ</label>
+                <select value={distribFilter.payMethod}
+                  onChange={e => setDistribFilter(f => ({ ...f, payMethod: e.target.value }))}
+                  className="select-field text-sm py-2">
+                  <option value="">ທັງໝົດ</option>
+                  <option value="cash">💵 ເງິນສົດ</option>
+                  <option value="transfer">💳 ໂອນ</option>
+                </select>
+              </div>
+              <div>
+                <label className="field-label text-xs">ສະຖານະຊຳລະ</label>
+                <select value={distribFilter.isPaid}
+                  onChange={e => setDistribFilter(f => ({ ...f, isPaid: e.target.value }))}
+                  className="select-field text-sm py-2">
+                  <option value="">ທັງໝົດ</option>
+                  <option value="unpaid">⏳ ຍັງບໍ່ທັນ</option>
+                  <option value="paid">✅ ຊຳລະແລ້ວ</option>
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="field-label text-xs">ຈາກວັນທີ</label>
+                <input type="date" value={distribFilter.dateFrom}
+                  onChange={e => setDistribFilter(f => ({ ...f, dateFrom: e.target.value }))}
+                  className="input-field text-sm py-2" />
+              </div>
+              <div>
+                <label className="field-label text-xs">ຫາວັນທີ</label>
+                <input type="date" value={distribFilter.dateTo}
+                  onChange={e => setDistribFilter(f => ({ ...f, dateTo: e.target.value }))}
+                  className="input-field text-sm py-2" />
+              </div>
+            </div>
+            {hasFilter && (
+              <button
+                onClick={() => setDistribFilter({ store: '', payMethod: '', isPaid: '', dateFrom: '', dateTo: '' })}
+                className="w-full text-xs py-2 rounded-xl bg-dark-700 text-gray-400 border border-dark-500 hover:text-white hover:bg-dark-600 transition-colors"
+              >
+                ↺ Reset ທຸກ Filter
+              </button>
+            )}
+          </div>
+
+          {filtered.length === 0 ? (
+            <Empty icon="🚚" message={hasFilter ? 'ບໍ່ພົບລາຍການທີ່ກົງກັບ filter' : 'ຍັງບໍ່ມີການກະຈາຍ'} />
+          ) : (
+            <div className="space-y-5">
+              {/* Unpaid group */}
+              {unpaid.length > 0 && (
+                <div>
+                  <p className="text-orange-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse inline-block" />
+                    ຍັງບໍ່ທັນຊຳລະ ({unpaid.length})
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {unpaid.map(r => <DistribCard key={r.id} r={r} />)}
+                  </div>
+                </div>
+              )}
+              {/* Paid group */}
+              {paid.length > 0 && (
+                <div>
+                  <p className="text-green-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+                    ຊຳລະແລ້ວ ({paid.length})
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                    {paid.map(r => <DistribCard key={r.id} r={r} />)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
     )
   }
@@ -787,16 +1068,13 @@ function Inner() {
     )
   }
 
-  // ─── Tab: Orders (merged: Create Order + Seller Orders + Notif history) ─
+  // ─── Tab: Orders (Seller Orders only — ຄຳສັ່ງ Distributor ຍ້າຍໄປ ກະຈາຍ) ─
   function renderOrders() {
     const byStatus = {
       pending:   orders.filter(o => o.status === 'pending'),
       confirmed: orders.filter(o => o.status === 'confirmed'),
       delivered: orders.filter(o => o.status === 'delivered'),
     }
-    const pendingNotifs  = notifications.filter(n => n.status === 'pending')
-    const ackedNotifs    = notifications.filter(n => n.status === 'acknowledged')
-    const deliveredNotifs = notifications.filter(n => n.status === 'delivered')
 
     function OrderCard({ o }) {
       const seller = users.find(u => u.id === o.created_by)
@@ -804,14 +1082,13 @@ function Inner() {
         <div className="card">
           <div className="flex justify-between items-start">
             <div className="flex-1 min-w-0">
-              <p className="text-white font-medium text-sm">{o.products?.type} {o.products?.size}</p>
-              <p className="text-gray-400 text-xs flex items-center gap-1"><Store size={11} />{seller?.store_name || seller?.name || 'Unknown'}</p>
-              <p className="text-gray-400 text-xs">👤 {seller?.name || 'Unknown'}</p>
+              <p className="text-white font-bold text-base leading-tight">{seller?.store_name || seller?.name || 'Unknown'}</p>
+              <p className="text-brand-yellow font-semibold text-sm mt-0.5">{o.products?.type} {o.products?.size} × {o.quantity} ຕຸກ</p>
+              <p className="text-gray-400 text-xs mt-1">👤 {seller?.name || 'Unknown'}</p>
               <p className="text-gray-500 text-xs">{fmtDateTime(o.created_at)}</p>
               {o.notes && <p className="text-gray-500 text-xs mt-0.5">📝 {o.notes}</p>}
             </div>
             <div className="flex flex-col items-end gap-1.5 shrink-0">
-              <p className="text-brand-yellow font-bold text-lg">{o.quantity} ຕຸກ</p>
               <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ORDER_STATUS[o.status]?.color}`}>
                 {ORDER_STATUS[o.status]?.label}
               </span>
@@ -820,19 +1097,19 @@ function Inner() {
           <div className="flex gap-2 mt-3 pt-3 border-t border-dark-500">
             {o.status === 'pending' && (
               <button onClick={() => updateOrderStatus(o.id, 'confirmed')}
-                className="flex-1 text-xs py-1.5 rounded-lg bg-blue-900/30 text-blue-400 border border-blue-400/30 hover:bg-blue-900/50 transition-colors">
-                ✅ ຢືນຢັນ
+                className="flex-1 text-xs py-2 rounded-lg bg-blue-900/30 text-blue-400 border border-blue-400/30 hover:bg-blue-900/50 transition-colors">
+                ✅ ຢືນຢັນ + ສ້າງຄຳສັ່ງ Distributor
               </button>
             )}
             {o.status === 'confirmed' && (
               <button onClick={() => updateOrderStatus(o.id, 'delivered')}
-                className="flex-1 text-xs py-1.5 rounded-lg bg-green-900/30 text-green-400 border border-green-400/30 hover:bg-green-900/50 transition-colors">
+                className="flex-1 text-xs py-2 rounded-lg bg-green-900/30 text-green-400 border border-green-400/30 hover:bg-green-900/50 transition-colors">
                 📦 ສົ່ງແລ້ວ
               </button>
             )}
             {o.status !== 'pending' && (
               <button onClick={() => updateOrderStatus(o.id, 'pending')}
-                className="text-xs py-1.5 px-3 rounded-lg bg-dark-700 text-gray-400 hover:bg-dark-600 transition-colors">
+                className="text-xs py-2 px-3 rounded-lg bg-dark-700 text-gray-400 hover:bg-dark-600 transition-colors">
                 ↩ ຍົກເລີກ
               </button>
             )}
@@ -842,148 +1119,46 @@ function Inner() {
     }
 
     return (
-      <div className="space-y-6">
-
-        {/* ── Section 1: Create Order (Notification to Distributor) ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <SectionTitle>
-              <Bell size={18} className="text-brand-yellow" />ຄຳສັ່ງ Distributor
-            </SectionTitle>
-            <button
-              onClick={() => setShowNotifForm(true)}
-              className="btn-primary px-3 py-2 text-sm flex items-center gap-1.5"
-            >
-              <Plus size={15} />ສ້າງຄຳສັ່ງ
-            </button>
-          </div>
-
-          {/* Notification status groups */}
-          {pendingNotifs.length === 0 && ackedNotifs.length === 0 && deliveredNotifs.length === 0 ? (
-            <Empty icon="📭" message="ຍັງບໍ່ມີຄຳສັ່ງ — ກົດ ສ້າງຄຳສັ່ງ ດ້ານເທິງ" />
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {/* Pending notifications */}
-              {pendingNotifs.map(n => (
-                <div key={n.id} className="card border-yellow-400/20 bg-yellow-900/5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block" />
-                        {n.store_name || n.message || '—'}
-                      </p>
-                      {n.items?.length > 0 && (
-                        <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-1">
-                          <Package size={10} />
-                          {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
-                        </p>
-                      )}
-                      <p className="text-gray-500 text-xs mt-1">
-                        {n.assigned_to
-                          ? `➜ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'}`
-                          : '➜ ທຸກ Distributor'
-                        } · {fmtDateTime(n.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-yellow-900/30 text-yellow-400">⏳ ລໍຖ້າ</span>
-                      <button
-                        onClick={() => handlePrintNotifInvoice(n)}
-                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600"
-                      >
-                        <Printer size={10} />Invoice
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Acknowledged */}
-              {ackedNotifs.map(n => (
-                <div key={n.id} className="card border-blue-400/20 bg-blue-900/5">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm">{n.store_name || '—'}</p>
-                      {n.items?.length > 0 && (
-                        <p className="text-gray-400 text-xs mt-0.5 flex items-center gap-1">
-                          <Package size={10} />
-                          {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
-                        </p>
-                      )}
-                      <p className="text-gray-500 text-xs mt-1">
-                        {n.assigned_to
-                          ? `✅ ${users.find(u => u.id === n.assigned_to)?.name || 'Distributor'} ຮັບແລ້ວ`
-                          : '✅ ຮັບແລ້ວ'
-                        } · {fmtDateTime(n.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex flex-col items-end gap-1 shrink-0">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-blue-900/30 text-blue-400">✅ ຮັບແລ້ວ</span>
-                      <button
-                        onClick={() => handlePrintNotifInvoice(n)}
-                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600"
-                      >
-                        <Printer size={10} />Invoice
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-
-              {/* Delivered (collapsed) */}
-              {deliveredNotifs.slice(0, 5).map(n => (
-                <div key={n.id} className="card opacity-50 hover:opacity-80 transition-opacity">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-gray-300 text-sm truncate">{n.store_name || n.message || '—'}</p>
-                      <p className="text-gray-500 text-xs">{fmtDateTime(n.created_at)}</p>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400">📦 ສົ່ງແລ້ວ</span>
-                      <button
-                        onClick={() => handlePrintNotifInvoice(n)}
-                        className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-gray-400 border border-dark-500 flex items-center gap-1 hover:text-white hover:bg-dark-600"
-                      >
-                        <Printer size={10} />Invoice
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <SectionTitle>
+            <ClipboardList size={18} className="text-brand-yellow" />ການສັ່ງ Seller ({orders.length})
+          </SectionTitle>
         </div>
-
-        {/* ── Section 2: Seller Orders ── */}
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <SectionTitle>
-              <ClipboardList size={18} className="text-brand-yellow" />ການສັ່ງ Seller ({orders.length})
-            </SectionTitle>
+        <p className="text-gray-500 text-xs mb-4 bg-dark-800 border border-dark-500 rounded-xl px-3 py-2">
+          💡 ເມື່ອກົດ <span className="text-blue-400">ຢືນຢັນ</span> — ລາຍການຈະຖືກສ້າງເປັນຄຳສັ່ງ Distributor ໂດຍອັດຕະໂນມັດ ແລ້ວໄປສະແດງຢູ່ ເມນູກະຈາຍ
+        </p>
+        {orders.length === 0 ? <Empty icon="📋" message="ຍັງບໍ່ມີການສັ່ງ" /> : (
+          <div className="space-y-4">
+            {byStatus.pending.length > 0 && (
+              <div>
+                <p className="text-yellow-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse inline-block" />
+                  ລໍຖ້າ ({byStatus.pending.length})
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.pending.map(o => <OrderCard key={o.id} o={o} />)}</div>
+              </div>
+            )}
+            {byStatus.confirmed.length > 0 && (
+              <div>
+                <p className="text-blue-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+                  ຢືນຢັນ — ລໍຖ້າ Distributor ສົ່ງ ({byStatus.confirmed.length})
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.confirmed.map(o => <OrderCard key={o.id} o={o} />)}</div>
+              </div>
+            )}
+            {byStatus.delivered.length > 0 && (
+              <div>
+                <p className="text-green-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
+                  ສົ່ງສຳເລັດ ({byStatus.delivered.length})
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.delivered.map(o => <OrderCard key={o.id} o={o} />)}</div>
+              </div>
+            )}
           </div>
-          {orders.length === 0 ? <Empty icon="📋" message="ຍັງບໍ່ມີການສັ່ງ" /> : (
-            <>
-              {byStatus.pending.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-yellow-400 text-xs font-semibold mb-2">🕐 ລໍຖ້າ ({byStatus.pending.length})</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.pending.map(o => <OrderCard key={o.id} o={o} />)}</div>
-                </div>
-              )}
-              {byStatus.confirmed.length > 0 && (
-                <div className="mb-4">
-                  <p className="text-blue-400 text-xs font-semibold mb-2">✅ ຢືນຢັນ ({byStatus.confirmed.length})</p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">{byStatus.confirmed.map(o => <OrderCard key={o.id} o={o} />)}</div>
-                </div>
-              )}
-              {byStatus.delivered.length > 0 && (
-                <div>
-                  <p className="text-green-400 text-xs font-semibold mb-2">📦 ສົ່ງແລ້ວ ({byStatus.delivered.length})</p>
-                  <div className="space-y-2">{byStatus.delivered.map(o => <OrderCard key={o.id} o={o} />)}</div>
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        )}
       </div>
     )
   }
@@ -1277,9 +1452,12 @@ function Inner() {
 
   // ─── Tab badge helper ─────────────────────────────────────────────────
   function tabBadge(id) {
+    if (id === 'distrib') {
+      const pending = notifications.filter(n => n.status === 'pending').length
+      if (pending > 0) return pending
+    }
     if (id === 'orders') {
-      const total = pendingOrders + notifications.filter(n => n.status === 'pending').length
-      if (total > 0) return total
+      if (pendingOrders > 0) return pendingOrders
     }
     if (id === 'materials') {
       const low = rawMaterials.filter(m => m.quantity_in_stock < 5).length
@@ -1613,6 +1791,17 @@ function Inner() {
         danger
       />
 
+      {/* ── Delete Single Distrib Record ────────────────────────────────── */}
+      <ConfirmDialog
+        open={!!deleteSingleDistrib}
+        onClose={() => setDeleteSingleDistrib(null)}
+        onConfirm={() => deleteDistribRecord(deleteSingleDistrib?.id)}
+        title="🗑 ລຶບລາຍການກະຈາຍ"
+        message={`ລຶບລາຍການ "${deleteSingleDistrib?.store_name || '—'}" ຈຳນວນ ${deleteSingleDistrib?.quantity || 0} ຕຸກ?\n\nຂໍ້ມູນຈະຖືກລຶບຖາວອນ.`}
+        confirmLabel="ລຶບ"
+        danger
+      />
+
       {/* ── Detail Modal ────────────────────────────────────────────────── */}
       <Modal
         open={!!detail}
@@ -1635,6 +1824,13 @@ function Inner() {
 
           return (
             <div className="space-y-4">
+              {/* Store name header — distrib only */}
+              {detail.type === 'distrib' && (
+                <div className="text-center py-2 border-b border-dark-500">
+                  <p className="text-gray-400 text-xs mb-0.5">ຮ້ານ</p>
+                  <p className="text-white font-bold text-2xl leading-tight">{r.store_name || '—'}</p>
+                </div>
+              )}
               <div className="card space-y-0 py-1">
                 <Row label="ສິນຄ້າ" value={`${r.products?.type} ${r.products?.size}`} />
 
