@@ -73,7 +73,7 @@ function Inner() {
           .eq('created_by', user.id)
           .order('created_at', { ascending: false }),
         supabase.from('notifications')
-          .select('*, profiles!notifications_created_by_fkey(name)')
+          .select('*')
           .order('created_at', { ascending: false })
           .limit(60),
       ])
@@ -284,7 +284,7 @@ function Inner() {
               <p className="text-gray-400 text-xs mt-0.5 break-words">{notif.message}</p>
             )}
             <p className="text-gray-500 text-xs mt-1">
-              ➜ {notif.profiles?.name || 'Admin'} · {fmtDate(notif.created_at)}
+              ➜ Admin · {fmtDate(notif.created_at)}
             </p>
             {notif.assigned_to === null && (
               <p className="text-blue-400 text-xs mt-0.5">📢 ສົ່ງໃຫ້ທຸກ Distributor</p>

@@ -53,7 +53,7 @@ exports.handler = async (event) => {
     if (!password) throw new Error('password is required')
     if (!name)     throw new Error('name is required')
     if (!role)     throw new Error('role is required')
-    if (!['producer', 'distributor', 'seller', 'admin'].includes(role)) {
+    if (!['producer', 'distributor', 'seller', 'admin', 'cashier'].includes(role)) {
       throw new Error('Invalid role value')
     }
 
