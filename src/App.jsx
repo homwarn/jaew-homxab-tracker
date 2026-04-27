@@ -6,6 +6,7 @@ import ProducerDashboard from './pages/ProducerDashboard'
 import DistributorDashboard from './pages/DistributorDashboard'
 import SellerDashboard from './pages/SellerDashboard'
 import AdminDashboard from './pages/AdminDashboard'
+import CashierDashboard from './pages/CashierDashboard'
 import logoImg from './assets/logo.png'
 
 // ─── Auth Context ──────────────────────────────────────────────────────────
@@ -103,6 +104,12 @@ export default function App() {
           <Route path="/admin/*" element={
             <ProtectedRoute allowedRoles={['admin']}>
               <AdminDashboard />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/cashier/*" element={
+            <ProtectedRoute allowedRoles={['cashier']}>
+              <CashierDashboard />
             </ProtectedRoute>
           } />
 

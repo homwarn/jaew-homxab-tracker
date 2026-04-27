@@ -8,8 +8,9 @@ import { ToastProvider, useToast } from '../components/Toast'
 import ImageUpload from '../components/ImageUpload'
 import {
   Bell, CheckCircle, Truck, Store, Clock, ChevronRight, Image,
-  MapPin, Package
+  MapPin, Package, Printer
 } from 'lucide-react'
+import { generateInvoiceNo, printInvoice } from '../lib/invoice'
 
 function fmtDate(d) {
   return new Date(d).toLocaleDateString('lo-LA', {
@@ -73,7 +74,6 @@ function Inner() {
           .order('created_at', { ascending: false }),
         supabase.from('notifications')
           .select('*, profiles!notifications_created_by_fkey(name)')
-          .or(`assigned_to.eq.${user.id},assigned_to.is.null`)
           .order('created_at', { ascending: false })
           .limit(60),
       ])
@@ -189,6 +189,22 @@ function Inner() {
     } finally {
       setSaving(false)
     }
+  }
+
+  // ─── Print Invoice from delivery items ────────────────────────────────
+  function handlePrintInvoice({ storeName, storeMapsUrl, items, paymentMethod, isPaid, receiverName, notes }) {
+    const invoiceNo = generateInvoiceNo()
+    printInvoice({
+      invoiceNo,
+      storeName,
+      storeMapsUrl,
+      distributorName: user?.user_metadata?.name || user?.email || '',
+      items,
+      paymentMethod,
+      isPaid,
+      receiverName,
+      notes,
+    })
   }
 
   // ─── Update delivery item quantity ─────────────────────────────────────
@@ -677,6 +693,27 @@ function Inner() {
               />
             </div>
 
+            {/* Print invoice preview button */}
+            <button
+              type="button"
+              onClick={() => {
+                const valid = deliveryItems.filter(i => i.product_id && i.quantity && parseInt(i.quantity) > 0)
+                if (!valid.length) { toast.error('ໃສ່ຈຳນວນສິນຄ້າກ່ອນ'); return }
+                handlePrintInvoice({
+                  storeName:    activeNotif.store_name,
+                  storeMapsUrl: activeNotif.store_maps_url,
+                  items:        valid.map(i => ({ product_name: i.product_name, quantity: parseInt(i.quantity), unit_price: parseFloat(i.unit_price) || 0 })),
+                  paymentMethod: payMethod,
+                  isPaid,
+                  receiverName,
+                  notes: formNotes,
+                })
+              }}
+              className="w-full py-2.5 rounded-xl bg-dark-600 text-gray-200 border border-dark-400 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-dark-500 transition-colors"
+            >
+              <Printer size={16} /> ພິມ Invoice
+            </button>
+
             <div className="grid grid-cols-2 gap-3 pt-1">
               <button type="button" onClick={() => setShowDeliveryForm(false)} className="btn-secondary">
                 ຍົກເລີກ
@@ -737,6 +774,21 @@ function Inner() {
                 )}
               </div>
             )}
+
+            <button
+              onClick={() => handlePrintInvoice({
+                storeName:    detail.store_name,
+                storeMapsUrl: detail.store_maps_url,
+                items:        [{ product_name: `${detail.products?.type} ${detail.products?.size}`, quantity: detail.quantity, unit_price: detail.unit_price || 0 }],
+                paymentMethod: detail.payment_method,
+                isPaid:       detail.is_paid,
+                receiverName: detail.receiver_name,
+                notes:        detail.notes,
+              })}
+              className="w-full py-2.5 rounded-xl bg-dark-600 text-gray-200 border border-dark-400 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-dark-500 transition-colors"
+            >
+              <Printer size={16} /> ພິມ Invoice
+            </button>
 
             <button
               onClick={() => { setDetail(null); setDetailImgs({}) }}

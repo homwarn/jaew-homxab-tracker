@@ -139,6 +139,7 @@ export const ROLE_LABELS = {
   distributor: 'ຜູ້ກະຈາຍ',
   seller:      'ຜູ້ຂາຍ',
   admin:       'ແອດມິນ',
+  cashier:     'ແຄຊຽ',
 }
 
 export const PRODUCTS_LIST = [
