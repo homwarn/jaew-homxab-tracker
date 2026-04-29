@@ -39,7 +39,8 @@ function qrUrl(data, size = 120) {
  * @param {string}  [opts.receiverName]
  * @param {string}  [opts.notes]
  * @param {Date}    [opts.date]
- * @param {string}  [opts.bankQrData]   — bank account / PromptPay / QR payment data
+ * @param {string}  [opts.bankQrData]   — bank account / PromptPay / QR payment data (generates via API)
+ * @param {string}  [opts.bankQrSrc]    — direct image src for payment QR (e.g. '/qr-payment.jpg' or Supabase URL)
  */
 export function printInvoice(opts) {
   const {
@@ -47,9 +48,15 @@ export function printInvoice(opts) {
     items = [], paymentMethod, isPaid, receiverName, notes,
     date = new Date(),
     bankQrData = '',
+    bankQrSrc  = '',
   } = opts
 
   const total = items.reduce((s, i) => s + (i.quantity || 0) * (i.unit_price || 0), 0)
+
+  // ── Bank QR: prefer static image src, fall back to API-generated
+  const bankQrHtml = bankQrSrc
+    ? `<img src="${bankQrSrc}" width="130" height="130" alt="QR ຊຳລະ" style="border-radius:8px;border:2px solid #f0f0f0;" />`
+    : (bankQrData ? `<img src="${qrUrl(bankQrData, 130)}" width="130" height="130" alt="QR ຊຳລະ" />` : '')
 
   const itemRows = items.map(i => {
     const subtotal = (i.quantity || 0) * (i.unit_price || 0)
@@ -64,7 +71,6 @@ export function printInvoice(opts) {
   }).join('')
 
   const storeQr  = storeMapsUrl ? qrUrl(storeMapsUrl) : ''
-  const bankQr   = bankQrData   ? qrUrl(bankQrData)   : ''
 
   const html = `<!DOCTYPE html>
 <html lang="lo">
@@ -135,7 +141,7 @@ export function printInvoice(opts) {
 
 <!-- Header with logo -->
 <div class="header">
-  <img class="logo" src="/logo.png" alt="Logo" onerror="this.style.display='none'" />
+  <img class="logo" src="${window.location.origin}/logo.png" alt="Logo" onerror="this.style.display='none'" />
   <div class="header-text">
     <h1>🌶 ແຈ່ວຫອມແຊບ</h1>
     <p class="sub">ໃບສົ່ງສິນຄ້າ / Delivery Invoice</p>
@@ -188,9 +194,9 @@ export function printInvoice(opts) {
     ${notes ? `<div style="margin-top:5px;color:#555;">📝 ${notes}</div>` : ''}
     <div><span class="status ${isPaid ? 'paid' : 'unpaid'}">${isPaid ? '✅ ຊຳລະແລ້ວ' : '⏳ ຄ້າງຊຳລະ'}</span></div>
   </div>
-  ${bankQr ? `
+  ${bankQrHtml ? `
   <div class="bank-qr">
-    <img src="${bankQr}" width="90" height="90" alt="Bank QR" />
+    ${bankQrHtml}
     <p>💳 ສະແກນຊຳລະ</p>
   </div>` : ''}
 </div>

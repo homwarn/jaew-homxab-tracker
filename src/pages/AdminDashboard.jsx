@@ -99,13 +99,15 @@ function Inner() {
   const [savingEditNotif, setSavingEditNotif]     = useState(false)
   const [cancelNotifConfirm, setCancelNotifConfirm] = useState(null)
   const [notifEditForm, setNotifEditForm]         = useState({ message: '', items: [] })
+  const [cancelAllNotifConfirm, setCancelAllNotifConfirm] = useState(false)
+  const [resetEverythingConfirm, setResetEverythingConfirm] = useState(false)
 
   // Store management form
   const [showStoreForm, setShowStoreForm] = useState(false)
   const [editStore, setEditStore]         = useState(null)
   const [savingStore, setSavingStore]     = useState(false)
   const [deleteStoreConfirm, setDeleteStoreConfirm] = useState(null)
-  const [storeForm, setStoreForm] = useState({ name: '', maps_url: '', prices: {} })
+  const [storeForm, setStoreForm] = useState({ name: '', maps_url: '', qr_code_url: '', prices: {} })
 
   // User form
   const [showUserForm, setShowUserForm]   = useState(false)
@@ -361,6 +363,37 @@ function Inner() {
     } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
 
+  // ─── Cancel ALL active notifications ──────────────────────────────────
+  async function cancelAllNotifs() {
+    const activeIds = notifications
+      .filter(n => n.status !== 'delivered')
+      .map(n => n.id)
+    if (!activeIds.length) { toast.error('ບໍ່ມີຄຳສັ່ງທີ່ຈະຍົກເລີກ'); setCancelAllNotifConfirm(false); return }
+    try {
+      const { error } = await supabase.from('notifications').delete().in('id', activeIds)
+      if (error) throw error
+      toast.success(`ຍົກເລີກ ${activeIds.length} ຄຳສັ່ງສຳເລັດ ✅`)
+      setCancelAllNotifConfirm(false)
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── Reset EVERYTHING ──────────────────────────────────────────────────
+  async function resetEverything() {
+    try {
+      await Promise.all([
+        supabase.from('production').delete().not('id', 'is', null),
+        supabase.from('distribution').delete().not('id', 'is', null),
+        supabase.from('sales').delete().not('id', 'is', null),
+        supabase.from('orders').delete().not('id', 'is', null),
+        supabase.from('notifications').delete().not('id', 'is', null),
+      ])
+      toast.success('Reset ທຸກຢ່າງສຳເລັດ ✅')
+      setResetEverythingConfirm(false)
+      load()
+    } catch (err) { toast.error('Reset ຜິດພາດ: ' + err.message) }
+  }
+
   // ─── Open edit notification form ───────────────────────────────────────
   function openEditNotif(notif) {
     setEditNotif(notif)
@@ -469,7 +502,7 @@ function Inner() {
     setEditStore(null)
     const defaultPrices = {}
     products.forEach(p => { defaultPrices[p.id] = '' })
-    setStoreForm({ name: '', maps_url: '', prices: defaultPrices })
+    setStoreForm({ name: '', maps_url: '', qr_code_url: '', prices: defaultPrices })
     setShowStoreForm(true)
   }
   function openEditStore(store) {
@@ -478,7 +511,7 @@ function Inner() {
     products.forEach(p => {
       prices[p.id] = String(storePriceMap[store.id]?.[p.id] ?? '')
     })
-    setStoreForm({ name: store.name, maps_url: store.maps_url || '', prices })
+    setStoreForm({ name: store.name, maps_url: store.maps_url || '', qr_code_url: store.qr_code_url || '', prices })
     setShowStoreForm(true)
   }
   async function saveStore() {
@@ -488,15 +521,17 @@ function Inner() {
       let storeId
       if (editStore) {
         const { error } = await supabase.from('stores').update({
-          name:     storeForm.name.trim(),
-          maps_url: storeForm.maps_url.trim() || null,
+          name:         storeForm.name.trim(),
+          maps_url:     storeForm.maps_url.trim() || null,
+          qr_code_url:  storeForm.qr_code_url.trim() || null,
         }).eq('id', editStore.id)
         if (error) throw error
         storeId = editStore.id
       } else {
         const { data, error } = await supabase.from('stores').insert({
-          name:     storeForm.name.trim(),
-          maps_url: storeForm.maps_url.trim() || null,
+          name:         storeForm.name.trim(),
+          maps_url:     storeForm.maps_url.trim() || null,
+          qr_code_url:  storeForm.qr_code_url.trim() || null,
         }).select().single()
         if (error) throw error
         storeId = data.id
@@ -606,7 +641,10 @@ function Inner() {
   function handlePrintNotifInvoice(notif) {
     const items = Array.isArray(notif.items) ? notif.items : []
     if (!items.length) { toast.error('ບໍ່ມີລາຍການສິນຄ້າໃນ Notification ນີ້'); return }
-    const distUser = users.find(u => u.id === notif.assigned_to)
+    const distUser  = users.find(u => u.id === notif.assigned_to)
+    const storeData = stores.find(s => s.id === notif.store_id)
+    // Use store-specific QR if set, otherwise fall back to static /qr-payment.jpg
+    const bankQrSrc = storeData?.qr_code_url || `${window.location.origin}/qr-payment.jpg`
     printInvoice({
       invoiceNo:       generateInvoiceNo(),
       storeName:       notif.store_name || '—',
@@ -616,6 +654,7 @@ function Inner() {
       paymentMethod:   'cash',
       isPaid:          notif.status === 'delivered',
       notes:           notif.message,
+      bankQrSrc,
     })
   }
 
@@ -1040,7 +1079,7 @@ function Inner() {
 
         {/* ════ SECTION A: Distributor Orders (Notifications) ════ */}
         <div>
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
             <SectionTitle>
               <Bell size={18} className="text-brand-yellow" />
               ຄຳສັ່ງ Distributor
@@ -1048,9 +1087,19 @@ function Inner() {
                 <span className="bg-brand-yellow text-dark-900 text-xs font-bold px-2 py-0.5 rounded-full ml-1">{activeNotifs.length}</span>
               )}
             </SectionTitle>
-            <button onClick={() => setShowNotifForm(true)} className="btn-primary px-3 py-2 text-sm flex items-center gap-1.5">
-              <Plus size={15} />ສ້າງຄຳສັ່ງ
-            </button>
+            <div className="flex items-center gap-2">
+              {activeNotifs.length > 0 && (
+                <button
+                  onClick={() => setCancelAllNotifConfirm(true)}
+                  className="flex items-center gap-1 text-xs text-red-400 border border-red-400/30 px-3 py-1.5 rounded-lg hover:bg-red-900/20 transition-colors"
+                >
+                  <XCircle size={12} /> ຍົກເລີກທັງໝົດ
+                </button>
+              )}
+              <button onClick={() => setShowNotifForm(true)} className="btn-primary px-3 py-2 text-sm flex items-center gap-1.5">
+                <Plus size={15} />ສ້າງຄຳສັ່ງ
+              </button>
+            </div>
           </div>
 
           {activeNotifs.length === 0 && deliveredNotifs.length === 0 ? (
@@ -1070,27 +1119,43 @@ function Inner() {
                   </div>
                 </div>
               ))}
-              {/* Delivered (collapsed, limited) */}
-              {deliveredNotifs.length > 0 && (
-                <div>
-                  <p className="text-gray-500 text-xs font-semibold mb-2 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
-                    ສົ່ງສຳເລັດ ({deliveredNotifs.length})
-                  </p>
-                  {groupedDelivered.map(([dateLabel, items]) => (
-                    <div key={dateLabel} className="mb-3">
-                      <div className="flex items-center gap-2 mb-2">
-                        <div className="h-px flex-1 bg-dark-500" />
-                        <span className="text-gray-600 text-xs px-2">📅 {dateLabel}</span>
-                        <div className="h-px flex-1 bg-dark-500" />
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {items.map(n => <NotifCard key={n.id} n={n} />)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
+              {/* Delivered — grouped by distributor user */}
+              {deliveredNotifs.length > 0 && (() => {
+                // Group by assigned_to (distributor user ID)
+                const byDist = {}
+                deliveredNotifs.slice(0, 30).forEach(n => {
+                  const key = n.assigned_to || '__broadcast__'
+                  if (!byDist[key]) byDist[key] = []
+                  byDist[key].push(n)
+                })
+                return (
+                  <div>
+                    <p className="text-gray-500 text-xs font-semibold mb-3 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
+                      ສົ່ງສຳເລັດ ({deliveredNotifs.length}) — ແຍກຕາມຜູ້ກະຈາຍ
+                    </p>
+                    {Object.entries(byDist).map(([distId, items]) => {
+                      const distName = distId === '__broadcast__'
+                        ? 'ທຸກ Distributor (Broadcast)'
+                        : (users.find(u => u.id === distId)?.name || `Distributor ${distId.slice(0, 6)}`)
+                      return (
+                        <div key={distId} className="mb-4">
+                          <div className="flex items-center gap-2 mb-2">
+                            <div className="h-px flex-1 bg-dark-500" />
+                            <span className="text-blue-400 text-xs font-medium px-2 bg-dark-800 rounded-full border border-blue-400/20">
+                              🚚 {distName} ({items.length})
+                            </span>
+                            <div className="h-px flex-1 bg-dark-500" />
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                            {items.map(n => <NotifCard key={n.id} n={n} />)}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )
+              })()}
             </div>
           )}
         </div>
@@ -1436,14 +1501,33 @@ function Inner() {
                             ))}
                           </div>
                         )}
+                        {/* QR badge */}
+                        {store.qr_code_url ? (
+                          <span className="text-xs text-brand-yellow mt-1 flex items-center gap-1">
+                            <Package size={10} />ມີ QR ຊຳລະ
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-600 mt-1 flex items-center gap-1">
+                            <Package size={10} />QR ສ່ວນກາງ
+                          </span>
+                        )}
                       </div>
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button onClick={() => openEditStore(store)} className="p-2 text-gray-400 hover:text-brand-yellow">
-                          <Pencil size={15} />
-                        </button>
-                        <button onClick={() => setDeleteStoreConfirm(store)} className="p-2 text-gray-400 hover:text-red-400">
-                          <Trash2 size={15} />
-                        </button>
+                      <div className="flex flex-col items-end gap-1">
+                        {/* Mini QR preview */}
+                        <img
+                          src={store.qr_code_url || '/qr-payment.jpg'}
+                          alt="QR"
+                          className="w-12 h-12 rounded-lg border border-dark-400 object-contain bg-white"
+                          onError={e => { e.target.style.display = 'none' }}
+                        />
+                        <div className="flex items-center gap-1">
+                          <button onClick={() => openEditStore(store)} className="p-1.5 text-gray-400 hover:text-brand-yellow">
+                            <Pencil size={14} />
+                          </button>
+                          <button onClick={() => setDeleteStoreConfirm(store)} className="p-1.5 text-gray-400 hover:text-red-400">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1536,6 +1620,18 @@ function Inner() {
           <p className="text-gray-400 text-sm mb-6">ດາວໂຫລດລາຍງານທັງໝົດ: ຜະລິດ, ກະຈາຍ, ຂາຍ, ການຊຳລະ</p>
           <button onClick={handleExport} disabled={exporting} className="btn-primary px-8 mx-auto">
             {exporting ? <><div className="spinner border-dark-900" />ກຳລັງ Export...</> : <><Download size={20} />Export Excel (.xlsx)</>}
+          </button>
+        </div>
+
+        {/* ── Danger Zone: Reset Everything ── */}
+        <div className="card border-red-900/40 bg-red-900/5">
+          <p className="text-red-400 font-semibold text-sm flex items-center gap-2 mb-1">⚠️ Danger Zone</p>
+          <p className="text-gray-500 text-xs mb-4">Reset ທຸກລາຍການ: ຜະລິດ, ກະຈາຍ, ຂາຍ, ການສັ່ງ, ຄຳສັ່ງ Distributor ທັງໝົດ. ຂໍ້ມູນຈະຖືກລຶບຖາວອນ ແລະ ກູ້ຄືນບໍ່ໄດ້.</p>
+          <button
+            onClick={() => setResetEverythingConfirm(true)}
+            className="w-full py-2.5 rounded-xl bg-red-900/40 text-red-400 border border-red-800 font-semibold text-sm flex items-center justify-center gap-2 hover:bg-red-900/60 transition-colors"
+          >
+            <RotateCcw size={16} /> Reset ທຸກຢ່າງ (ລຶບຂໍ້ມູນທັງໝົດ)
           </button>
         </div>
         <div className="card space-y-3">
@@ -1724,6 +1820,32 @@ function Inner() {
               className="input-field text-sm"
             />
             <p className="text-gray-500 text-xs mt-1">ໃສ່ link Google Maps ຂອງຮ້ານ ເພື່ອໃຫ້ Distributor Navigate ໄດ້</p>
+          </div>
+
+          {/* QR code URL for payment */}
+          <div>
+            <label className="field-label flex items-center gap-1.5">
+              <Package size={13} className="text-brand-yellow" /> QR Code ຊຳລະເງິນ (URL ຮູບ)
+            </label>
+            <input
+              type="text"
+              value={storeForm.qr_code_url}
+              onChange={e => setStoreForm(f => ({ ...f, qr_code_url: e.target.value }))}
+              placeholder="/qr-payment.jpg  ຫລື  https://..."
+              className="input-field text-sm"
+            />
+            <p className="text-gray-500 text-xs mt-1">ປ່ອຍວ່າງ = ໃຊ້ QR ສ່ວນກາງ (/qr-payment.jpg)</p>
+            {storeForm.qr_code_url && (
+              <div className="mt-2 flex items-center gap-3">
+                <img
+                  src={storeForm.qr_code_url}
+                  alt="QR Preview"
+                  className="w-16 h-16 rounded-lg border border-dark-400 object-contain bg-white"
+                  onError={e => { e.target.style.display = 'none' }}
+                />
+                <span className="text-gray-500 text-xs">Preview QR</span>
+              </div>
+            )}
           </div>
 
           {/* Per-product pricing */}
@@ -1928,6 +2050,28 @@ function Inner() {
         title="ຍົກເລີກຄຳສັ່ງ"
         message={`ຍົກເລີກຄຳສັ່ງ "${cancelNotifConfirm?.store_name || '—'}" ແທ້ບໍ?\nຄຳສັ່ງຈະຖືກລຶບຖາວອນ.`}
         confirmLabel="ຍົກເລີກຄຳສັ່ງ"
+        danger
+      />
+
+      {/* ── Cancel ALL Notifications Confirm ─────────────────────────────── */}
+      <ConfirmDialog
+        open={cancelAllNotifConfirm}
+        onClose={() => setCancelAllNotifConfirm(false)}
+        onConfirm={cancelAllNotifs}
+        title="⚠️ ຍົກເລີກຄຳສັ່ງທັງໝົດ"
+        message={`ທ່ານຕ້ອງການຍົກເລີກ ${notifications.filter(n => n.status !== 'delivered').length} ຄຳສັ່ງທີ່ຍັງຄ້າງຢູ່ທັງໝົດ ແທ້ບໍ?\n\nຄຳສັ່ງທີ່ ສົ່ງສຳເລັດ (delivered) ຈະບໍ່ຖືກລຶບ.`}
+        confirmLabel="ຍົກເລີກທັງໝົດ"
+        danger
+      />
+
+      {/* ── Reset Everything Confirm ──────────────────────────────────────── */}
+      <ConfirmDialog
+        open={resetEverythingConfirm}
+        onClose={() => setResetEverythingConfirm(false)}
+        onConfirm={resetEverything}
+        title="☢️ Reset ທຸກຢ່າງ"
+        message="ທ່ານຕ້ອງການລຶບຂໍ້ມູນທຸກຢ່າງທັງໝົດ ແທ້ບໍ?\n\n🗑 ລາຍການຜະລິດ\n🗑 ລາຍການກະຈາຍ\n🗑 ລາຍການຂາຍ\n🗑 ການສັ່ງ Seller\n🗑 ຄຳສັ່ງ Distributor\n\nຂໍ້ມູນທັງໝົດຈະຖືກລຶບຖາວອນ ແລະ ກູ້ຄືນບໍ່ໄດ້!"
+        confirmLabel="Reset ທຸກຢ່າງ"
         danger
       />
 

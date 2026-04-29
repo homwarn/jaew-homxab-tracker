@@ -8,7 +8,7 @@ import { ToastProvider, useToast } from '../components/Toast'
 import ImageUpload from '../components/ImageUpload'
 import {
   Bell, CheckCircle, Truck, Store, Clock, ChevronRight, Image,
-  MapPin, Package, Printer
+  MapPin, Package, Printer, QrCode
 } from 'lucide-react'
 import { generateInvoiceNo, printInvoice } from '../lib/invoice'
 
@@ -47,7 +47,6 @@ function Inner() {
   const [isPaid, setIsPaid]                     = useState(false)
   const [receiverName, setReceiverName]         = useState('')
   const [transferNote, setTransferNote]         = useState('')
-  const [billImg, setBillImg]                   = useState(null)
   const [slipImg, setSlipImg]                   = useState(null)
   const [deliveryImg, setDeliveryImg]           = useState(null)
   const [formNotes, setFormNotes]               = useState('')
@@ -140,7 +139,7 @@ function Inner() {
     setIsPaid(false)
     setReceiverName('')
     setTransferNote('')
-    setBillImg(null); setSlipImg(null); setDeliveryImg(null)
+    setSlipImg(null); setDeliveryImg(null)
     setFormNotes('')
     setShowDeliveryForm(true)
   }
@@ -163,7 +162,6 @@ function Inner() {
         is_paid:            isPaid,
         receiver_name:      payMethod === 'cash'     ? receiverName.trim() : null,
         transfer_note:      payMethod === 'transfer' ? transferNote        : null,
-        bill_image_url:     billImg,
         slip_image_url:     payMethod === 'transfer' ? slipImg             : null,
         delivery_image_url: deliveryImg,
         notes:              formNotes || null,
@@ -204,6 +202,7 @@ function Inner() {
       isPaid,
       receiverName,
       notes,
+      bankQrSrc: `${window.location.origin}/qr-payment.jpg`,
     })
   }
 
@@ -545,22 +544,52 @@ function Inner() {
         {activeNotif && (
           <form onSubmit={handleDeliverySubmit} className="space-y-4">
 
-            {/* Store info (read-only) */}
-            <div className="bg-dark-700/60 rounded-2xl p-3 space-y-1">
-              <div className="flex items-center gap-2">
-                <Store size={16} className="text-brand-yellow" />
-                <p className="text-white font-semibold text-sm">{activeNotif.store_name}</p>
+            {/* Store info (read-only) + Location QR */}
+            <div className="bg-dark-700/60 rounded-2xl p-3 space-y-2">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Store size={16} className="text-brand-yellow" />
+                    <p className="text-white font-semibold text-sm">{activeNotif.store_name}</p>
+                  </div>
+                  {activeNotif.store_maps_url && (
+                    <a
+                      href={activeNotif.store_maps_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 text-xs flex items-center gap-1 pl-6 mt-1 hover:text-blue-300"
+                    >
+                      <MapPin size={11} /> ເປີດ Google Maps
+                    </a>
+                  )}
+                </div>
+                {activeNotif.store_maps_url && (
+                  <div className="text-center shrink-0">
+                    <img
+                      src={`https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=${encodeURIComponent(activeNotif.store_maps_url)}&margin=2`}
+                      alt="Location QR"
+                      className="rounded-lg border border-dark-400"
+                      width={72} height={72}
+                    />
+                    <p className="text-gray-500 text-[9px] mt-0.5">📍 ທີ່ຕັ້ງ</p>
+                  </div>
+                )}
               </div>
-              {activeNotif.store_maps_url && (
-                <a
-                  href={activeNotif.store_maps_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-400 text-xs flex items-center gap-1 pl-6 hover:text-blue-300"
-                >
-                  <MapPin size={11} /> ເປີດ Google Maps
-                </a>
-              )}
+            </div>
+
+            {/* Payment QR code for customer */}
+            <div className="bg-dark-700/60 rounded-2xl p-3">
+              <p className="text-gray-400 text-xs font-medium mb-2 flex items-center gap-1.5">
+                <QrCode size={13} className="text-brand-yellow" /> QR ຊຳລະເງິນ (ໃຫ້ລູກຄ້າ Scan)
+              </p>
+              <div className="flex justify-center">
+                <img
+                  src="/qr-payment.jpg"
+                  alt="QR ຊຳລະ"
+                  className="rounded-xl object-contain border border-dark-400"
+                  style={{ maxWidth: 160, maxHeight: 160 }}
+                />
+              </div>
             </div>
 
             {/* Items — qty editable, price editable, name read-only */}
@@ -679,7 +708,6 @@ function Inner() {
               </>
             )}
 
-            <ImageUpload bucket="distribution-images" label="ຮູບໃບບິນ (ທາງເລືອກ)" onUpload={setBillImg} />
             <ImageUpload bucket="distribution-images" label="ຮູບການສົ່ງ (ທາງເລືອກ)" onUpload={setDeliveryImg} />
 
             <div>
