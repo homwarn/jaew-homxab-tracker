@@ -151,6 +151,23 @@ function Inner() {
       <Page>
         {loading ? <div className="flex justify-center py-20"><Spinner size={36} /></div> : (
           <>
+            {/* ── Record button — TOP, pill shape, glowing yellow ── */}
+            <div className="flex justify-center mb-6">
+              <button
+                onClick={() => setShowForm(true)}
+                className="btn-glow bg-brand-yellow text-dark-900 font-bold text-base flex items-center gap-3 active:scale-95 transition-transform"
+                style={{
+                  borderRadius: '9999px',
+                  padding: '14px 36px',
+                  minHeight: 'unset',
+                  fontSize: '1.05rem',
+                  letterSpacing: '0.02em',
+                }}
+              >
+                <Plus size={24} strokeWidth={3} /> 🏭 ບັນທຶກການຜະລິດ
+              </button>
+            </div>
+
             {/* Stats */}
             <div className="grid grid-cols-2 gap-3 mb-6">
               <StatCard label="ຂາຍສົ່ງ (Stock)"  value={stats.wholesale.toLocaleString()} sub="ຕຸກ"  icon="🚚" color="yellow" />
@@ -178,11 +195,6 @@ function Inner() {
                 )
               })}
             </div>
-
-            {/* Add button */}
-            <button onClick={() => setShowForm(true)} className="btn-primary w-full mb-6">
-              <Plus size={22} /> ບັນທຶກການຜະລິດ
-            </button>
 
             {/* History — clickable for detail */}
             <SectionTitle><Clock size={18} className="text-brand-yellow" />ປະຫວັດການຜະລິດ</SectionTitle>

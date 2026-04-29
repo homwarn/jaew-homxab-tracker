@@ -171,6 +171,23 @@ html { scroll-behavior: smooth; }
 .toggle-track.on .toggle-thumb  { transform: translateX(26px); }
 .toggle-track.off .toggle-thumb { transform: translateX(0); }
 
+/* Glow pulse — producer record button */
+@keyframes glow-yellow {
+  0%, 100% {
+    box-shadow: 0 0 10px 2px rgba(245,197,24,0.4),
+                0 0 24px 4px rgba(245,197,24,0.2);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 22px 6px rgba(245,197,24,0.85),
+                0 0 48px 12px rgba(245,197,24,0.35);
+    transform: scale(1.025);
+  }
+}
+.btn-glow {
+  animation: glow-yellow 1.8s ease-in-out infinite;
+}
+
 /* Spinner */
 @keyframes spin { to { transform: rotate(360deg); } }
 .spinner {

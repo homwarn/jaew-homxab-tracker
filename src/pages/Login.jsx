@@ -133,6 +133,7 @@ export default function Login() {
         </div>
 
         <p className="text-gray-600 text-xs mt-6">ຕິດຕໍ່ Admin ຫາກຍັງບໍ່ມີບັນຊີ</p>
+        <p className="text-gray-700 text-[10px] mt-3 select-none">version 1.0 · dev by soulixay insixiengmai</p>
       </div>
     </div>
   )
