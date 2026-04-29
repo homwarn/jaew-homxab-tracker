@@ -211,13 +211,50 @@ export function printInvoice(opts) {
 </div>
 
 <div class="print-btn">
-  <button onclick="window.print()" style="padding:10px 28px;background:#F5C518;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;margin-right:8px;">
-    🖨️ ພິມ Invoice
-  </button>
-  <button onclick="window.close()" style="padding:10px 20px;background:#eee;border:none;border-radius:10px;font-size:14px;cursor:pointer;">
-    ✕ ປິດ
-  </button>
+  <!-- Paper size selector -->
+  <div style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;">
+    <button id="btnReceipt" onclick="setPaper('receipt')"
+      style="padding:7px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#F5C518;color:#111;border:none;">
+      🧾 80mm Receipt
+    </button>
+    <button id="btnA4" onclick="setPaper('a4')"
+      style="padding:7px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#eee;color:#555;border:none;">
+      📄 A4
+    </button>
+  </div>
+  <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+    <button onclick="window.print()" style="padding:10px 24px;background:#F5C518;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">
+      🖨️ ພິມ Invoice
+    </button>
+    <button onclick="window.print()" title="ໃນ dialog ພິມ ເລືອກ 'Save as PDF'"
+      style="padding:10px 20px;background:#4CAF50;color:#fff;border:none;border-radius:10px;font-size:14px;font-weight:700;cursor:pointer;">
+      💾 PDF
+    </button>
+    <button onclick="window.close()" style="padding:10px 16px;background:#eee;border:none;border-radius:10px;font-size:14px;cursor:pointer;">
+      ✕ ປິດ
+    </button>
+  </div>
 </div>
+<style id="paperStyle"></style>
+<script>
+function setPaper(size) {
+  var s = document.getElementById('paperStyle');
+  var btnR = document.getElementById('btnReceipt');
+  var btnA = document.getElementById('btnA4');
+  if (size === 'a4') {
+    document.body.style.maxWidth = '700px';
+    s.textContent = '@page { size: A4 portrait; margin: 12mm; } body { font-size: 14px !important; } th, td { padding: 7px 8px !important; font-size: 13px !important; }';
+    btnA.style.background = '#F5C518'; btnA.style.color = '#111';
+    btnR.style.background = '#eee';    btnR.style.color = '#555';
+  } else {
+    document.body.style.maxWidth = '400px';
+    s.textContent = '@page { size: 80mm auto; margin: 3mm 4mm; }';
+    btnR.style.background = '#F5C518'; btnR.style.color = '#111';
+    btnA.style.background = '#eee';    btnA.style.color = '#555';
+  }
+}
+setPaper('receipt');
+</script>
 
 </body>
 </html>`

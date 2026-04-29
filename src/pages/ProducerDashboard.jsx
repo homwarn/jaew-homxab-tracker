@@ -24,8 +24,17 @@ function Inner() {
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
 
+  // Global destination for the form (top-level toggle)
+  const [globalDest, setGlobalDest] = useState('retail')
+
   // Multi-product form
-  const makeItem = (prods) => ({ product_id: prods?.[0]?.id || '', quantity: '', destination: 'retail' })
+  const makeItem = (prods, dest) => {
+    const d = dest || 'retail'
+    const firstId = d === 'retail'
+      ? prods?.find(p => p.type?.includes('ເຂັ້ມຂຸ້ນ'))?.id || prods?.[0]?.id || ''
+      : prods?.[0]?.id || ''
+    return { product_id: firstId, quantity: '', destination: d }
+  }
   const [items, setItems]       = useState([{ product_id: '', quantity: '', destination: 'retail' }])
   const [formImage, setFormImage]   = useState(null)
   const [formNotes, setFormNotes]   = useState('')
@@ -64,7 +73,7 @@ function Inner() {
         }
       })
       setStockMap(map)
-      setItems([makeItem(prods)])
+      setItems([makeItem(prods, 'retail')])
     } catch { toast.error('ໂຫລດຂໍ້ມູນຜິດພາດ') }
     finally { setLoading(false) }
   }, [])
@@ -94,13 +103,23 @@ function Inner() {
 
   // ─── Multi-item helpers ───────────────────────────────────────────────────
   function addItem() {
-    setItems(prev => [...prev, { product_id: products[0]?.id || '', quantity: '', destination: 'retail' }])
+    const firstId = globalDest === 'retail'
+      ? products.find(p => p.type?.includes('ເຂັ້ມຂຸ້ນ'))?.id || products[0]?.id || ''
+      : products[0]?.id || ''
+    setItems(prev => [...prev, { product_id: firstId, quantity: '', destination: globalDest }])
   }
   function removeItem(i) {
     setItems(prev => prev.filter((_, idx) => idx !== i))
   }
   function updateItem(i, field, val) {
     setItems(prev => prev.map((item, idx) => idx === i ? { ...item, [field]: val } : item))
+  }
+  function switchGlobalDest(dest) {
+    setGlobalDest(dest)
+    const firstId = dest === 'retail'
+      ? products.find(p => p.type?.includes('ເຂັ້ມຂຸ້ນ'))?.id || products[0]?.id || ''
+      : products[0]?.id || ''
+    setItems([{ product_id: firstId, quantity: '', destination: dest }])
   }
 
   // ─── Submit ───────────────────────────────────────────────────────────────
@@ -112,7 +131,7 @@ function Inner() {
     try {
       const records = valid.map(i => ({
         product_id: i.product_id, quantity: parseInt(i.quantity),
-        destination: i.destination, image_url: formImage,
+        destination: globalDest, image_url: formImage,
         notes: formNotes || null, created_by: user.id,
       }))
       const { error } = await supabase.from('production').insert(records)
@@ -206,57 +225,78 @@ function Inner() {
       <Modal open={showForm} onClose={() => setShowForm(false)} title="🏭 ບັນທຶກການຜະລິດ">
         <form onSubmit={handleSubmit} className="space-y-4">
 
+          {/* ── Global Destination toggle (TOP) ── */}
+          <div>
+            <label className="field-label">ປາຍທາງ</label>
+            <div className="flex gap-2">
+              {[
+                { val: 'retail',    label: '🏪 ຮ້ານດາດ',  sub: 'ໝໍ້' },
+                { val: 'wholesale', label: '🚚 ຂາຍສົ່ງ',  sub: 'ຕຸກ' },
+              ].map(opt => (
+                <button key={opt.val} type="button"
+                  onClick={() => switchGlobalDest(opt.val)}
+                  className={`flex-1 py-3 rounded-2xl font-semibold text-sm transition-all flex flex-col items-center gap-0.5 ${
+                    globalDest === opt.val
+                      ? 'bg-brand-yellow text-dark-900 shadow-md'
+                      : 'bg-dark-600 text-gray-300 border border-dark-400'
+                  }`}>
+                  {opt.label}
+                  <span className={`text-xs font-normal ${globalDest === opt.val ? 'text-dark-700' : 'text-gray-500'}`}>{opt.sub}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Product items */}
           <div className="space-y-3">
             <label className="field-label">ລາຍການສິນຄ້າ</label>
-            {items.map((item, i) => (
-              <div key={i} className="bg-dark-600 rounded-2xl p-3 space-y-2 border border-dark-400">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-gray-400 text-xs">ລາຍການ {i + 1}</span>
-                  {items.length > 1 && (
-                    <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-300 p-1">
-                      <Trash2 size={14} />
-                    </button>
-                  )}
-                </div>
-                {/* Product select */}
-                <select
-                  value={item.product_id}
-                  onChange={e => updateItem(i, 'product_id', e.target.value)}
-                  className="select-field"
-                  required
-                >
-                  {products.map(p => <option key={p.id} value={p.id}>{p.type} {p.size}</option>)}
-                </select>
-                {/* Quantity */}
-                <div className="relative">
-                  <input
-                    type="number" inputMode="numeric" min="1"
-                    value={item.quantity}
-                    onChange={e => updateItem(i, 'quantity', e.target.value)}
-                    placeholder={`ຈຳນວນ (${item.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'})`}
+            {items.map((item, i) => {
+              // Filtered options based on globalDest
+              const opts = globalDest === 'retail'
+                ? [
+                    { id: products.find(p => p.type?.includes('ເຂັ້ມຂຸ້ນ'))?.id, label: 'ເຂັ້ມຂຸ້ນ' },
+                    { id: products.find(p => p.type?.includes('ນຸ້ມນວນ'))?.id,   label: 'ນຸ້ມນວນ-ດາດພັນ' },
+                  ].filter(o => o.id)
+                : products.map(p => ({ id: p.id, label: `${p.type} ${p.size}` }))
+              return (
+                <div key={i} className="bg-dark-600 rounded-2xl p-3 space-y-2 border border-dark-400">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-gray-400 text-xs">ລາຍການ {i + 1}</span>
+                    {items.length > 1 && (
+                      <button type="button" onClick={() => removeItem(i)} className="text-red-400 hover:text-red-300 p-1">
+                        <Trash2 size={14} />
+                      </button>
+                    )}
+                  </div>
+                  {/* Product select — filtered by globalDest */}
+                  <select
+                    value={item.product_id}
+                    onChange={e => updateItem(i, 'product_id', e.target.value)}
+                    className="select-field"
                     required
-                    className="input-field text-xl font-bold text-brand-yellow pr-14"
-                  />
-                  <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">
-                    {item.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
-                  </span>
+                  >
+                    {opts.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                  </select>
+                  {/* Quantity */}
+                  <div className="relative">
+                    <input
+                      type="number" inputMode="numeric" min="1"
+                      value={item.quantity}
+                      onChange={e => updateItem(i, 'quantity', e.target.value)}
+                      placeholder={`ຈຳນວນ (${globalDest === 'retail' ? 'ໝໍ້' : 'ຕຸກ'})`}
+                      required
+                      className="input-field text-xl font-bold text-brand-yellow pr-14"
+                    />
+                    <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium pointer-events-none">
+                      {globalDest === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                    </span>
+                  </div>
                 </div>
-                {/* Destination */}
-                <div className="flex gap-2">
-                  {[{val:'retail',label:'🏪 ຮ້ານດາດ'},{val:'wholesale',label:'🚚 ຂາຍສົ່ງ'}].map(opt => (
-                    <button key={opt.val} type="button"
-                      onClick={() => updateItem(i, 'destination', opt.val)}
-                      className={`flex-1 py-2 rounded-xl text-xs font-semibold transition-all ${item.destination===opt.val?'bg-brand-yellow text-dark-900':'bg-dark-500 text-gray-300 border border-dark-300'}`}>
-                      {opt.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* Add more */}
-            {items.length < products.length && (
+            {items.length < (globalDest === 'retail' ? 2 : products.length) && (
               <button type="button" onClick={addItem}
                 className="w-full py-2 rounded-2xl border border-dashed border-brand-yellow/40 text-brand-yellow text-sm flex items-center justify-center gap-2 hover:bg-brand-yellow/5">
                 <Plus size={16} /> ເພີ່ມສິນຄ້າລາຍການອື່ນ

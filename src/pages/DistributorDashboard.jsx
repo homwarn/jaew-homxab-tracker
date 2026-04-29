@@ -38,6 +38,7 @@ function Inner() {
   const [products, setProducts]     = useState([])
   const [distributions, setDist]    = useState([])
   const [notifications, setNotifs]  = useState([])
+  const [stores, setStores]         = useState([])
 
   // ── Delivery form state ──────────────────────────────────────────────────
   const [showDeliveryForm, setShowDeliveryForm] = useState(false)
@@ -45,6 +46,7 @@ function Inner() {
   const [deliveryItems, setDeliveryItems]       = useState([])
   const [payMethod, setPayMethod]               = useState('cash')
   const [isPaid, setIsPaid]                     = useState(false)
+  const [paymentPeriod, setPaymentPeriod]       = useState('current')
   const [receiverName, setReceiverName]         = useState('')
   const [transferNote, setTransferNote]         = useState('')
   const [slipImg, setSlipImg]                   = useState(null)
@@ -65,6 +67,7 @@ function Inner() {
         { data: prods },
         { data: dist },
         { data: notifs },
+        { data: storeList },
       ] = await Promise.all([
         supabase.from('products').select('*').order('type'),
         supabase.from('distribution')
@@ -75,10 +78,12 @@ function Inner() {
           .select('*')
           .order('created_at', { ascending: false })
           .limit(60),
+        supabase.from('stores').select('id, name, phone, maps_url'),
       ])
       setProducts(prods || [])
       setDist(dist || [])
       setNotifs(notifs || [])
+      setStores(storeList || [])
     } catch {
       toast.error('ໂຫລດຂໍ້ມູນຜິດພາດ')
     } finally {
@@ -137,6 +142,7 @@ function Inner() {
     }
     setPayMethod('cash')
     setIsPaid(false)
+    setPaymentPeriod('current')
     setReceiverName('')
     setTransferNote('')
     setSlipImg(null); setDeliveryImg(null)
@@ -160,6 +166,7 @@ function Inner() {
         store_name:         activeNotif.store_name,
         payment_method:     payMethod,
         is_paid:            isPaid,
+        payment_period:     paymentPeriod,
         receiver_name:      payMethod === 'cash'     ? receiverName.trim() : null,
         transfer_note:      payMethod === 'transfer' ? transferNote        : null,
         slip_image_url:     payMethod === 'transfer' ? slipImg             : null,
@@ -552,6 +559,15 @@ function Inner() {
                     <Store size={16} className="text-brand-yellow" />
                     <p className="text-white font-semibold text-sm">{activeNotif.store_name}</p>
                   </div>
+                  {/* Phone number from stores data */}
+                  {(() => {
+                    const storeData = stores.find(s => s.id === activeNotif.store_id)
+                    return storeData?.phone ? (
+                      <a href={`tel:${storeData.phone}`} className="text-green-400 text-xs flex items-center gap-1 pl-6 mt-0.5 hover:text-green-300">
+                        📞 {storeData.phone}
+                      </a>
+                    ) : null
+                  })()}
                   {activeNotif.store_maps_url && (
                     <a
                       href={activeNotif.store_maps_url}
@@ -710,6 +726,30 @@ function Inner() {
 
             <ImageUpload bucket="distribution-images" label="ຮູບການສົ່ງ (ທາງເລືອກ)" onUpload={setDeliveryImg} />
 
+            {/* Payment period */}
+            <div>
+              <label className="field-label">ງວດການຊຳລະ</label>
+              <div className="flex gap-2">
+                {[
+                  { val: 'current',  label: '💰 ຊຳລະບິນນີ້' },
+                  { val: 'previous', label: '🔄 ຊຳລະບິນງວດກ່ອນ' },
+                ].map(opt => (
+                  <button
+                    key={opt.val}
+                    type="button"
+                    onClick={() => setPaymentPeriod(opt.val)}
+                    className={`flex-1 py-2.5 rounded-xl font-semibold text-xs transition-all ${
+                      paymentPeriod === opt.val
+                        ? 'bg-brand-yellow text-dark-900'
+                        : 'bg-dark-600 text-gray-300 border border-dark-400'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div>
               <label className="field-label">ໝາຍເຫດ</label>
               <textarea
@@ -720,6 +760,17 @@ function Inner() {
                 className="input-field resize-none"
               />
             </div>
+
+            {/* Invoice total summary */}
+            {(() => {
+              const total = deliveryItems.reduce((s, i) => s + (parseInt(i.quantity)||0) * (parseFloat(i.unit_price)||0), 0)
+              return total > 0 ? (
+                <div className="bg-dark-700/60 rounded-2xl p-3 flex items-center justify-between">
+                  <span className="text-gray-300 font-semibold text-sm">💵 ຍອດລວມ Invoice</span>
+                  <span className="text-brand-yellow font-bold text-xl">{total.toLocaleString('lo-LA')} ₭</span>
+                </div>
+              ) : null
+            })()}
 
             {/* Print invoice preview button */}
             <button

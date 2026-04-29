@@ -48,6 +48,7 @@ export function Page({ children, className = '' }) {
   return (
     <main className={`max-w-screen-2xl mx-auto px-4 md:px-6 lg:px-8 py-4 md:py-6 pb-24 lg:pb-10 ${className}`}>
       {children}
+      <p className="text-center text-gray-700 text-[10px] mt-6 select-none">version 1.0 · dev by soulixay insixiengmai</p>
     </main>
   )
 }

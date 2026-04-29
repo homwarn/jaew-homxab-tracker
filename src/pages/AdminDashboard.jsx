@@ -107,7 +107,8 @@ function Inner() {
   const [editStore, setEditStore]         = useState(null)
   const [savingStore, setSavingStore]     = useState(false)
   const [deleteStoreConfirm, setDeleteStoreConfirm] = useState(null)
-  const [storeForm, setStoreForm] = useState({ name: '', maps_url: '', qr_code_url: '', prices: {} })
+  const [storeForm, setStoreForm] = useState({ name: '', phone: '', maps_url: '', qr_code_url: '', prices: {} })
+  const [storeSearch, setStoreSearch]     = useState('')
 
   // User form
   const [showUserForm, setShowUserForm]   = useState(false)
@@ -502,7 +503,7 @@ function Inner() {
     setEditStore(null)
     const defaultPrices = {}
     products.forEach(p => { defaultPrices[p.id] = '' })
-    setStoreForm({ name: '', maps_url: '', qr_code_url: '', prices: defaultPrices })
+    setStoreForm({ name: '', phone: '', maps_url: '', qr_code_url: '', prices: defaultPrices })
     setShowStoreForm(true)
   }
   function openEditStore(store) {
@@ -511,7 +512,7 @@ function Inner() {
     products.forEach(p => {
       prices[p.id] = String(storePriceMap[store.id]?.[p.id] ?? '')
     })
-    setStoreForm({ name: store.name, maps_url: store.maps_url || '', qr_code_url: store.qr_code_url || '', prices })
+    setStoreForm({ name: store.name, phone: store.phone || '', maps_url: store.maps_url || '', qr_code_url: store.qr_code_url || '', prices })
     setShowStoreForm(true)
   }
   async function saveStore() {
@@ -522,6 +523,7 @@ function Inner() {
       if (editStore) {
         const { error } = await supabase.from('stores').update({
           name:         storeForm.name.trim(),
+          phone:        storeForm.phone.trim() || null,
           maps_url:     storeForm.maps_url.trim() || null,
           qr_code_url:  storeForm.qr_code_url.trim() || null,
         }).eq('id', editStore.id)
@@ -530,6 +532,7 @@ function Inner() {
       } else {
         const { data, error } = await supabase.from('stores').insert({
           name:         storeForm.name.trim(),
+          phone:        storeForm.phone.trim() || null,
           maps_url:     storeForm.maps_url.trim() || null,
           qr_code_url:  storeForm.qr_code_url.trim() || null,
         }).select().single()
@@ -846,39 +849,91 @@ function Inner() {
 
   // ─── Tab: Production ───────────────────────────────────────────────────
   function renderProduction() {
+    const retailProd    = production.filter(r => r.destination === 'retail')
+    const wholesaleProd = production.filter(r => r.destination !== 'retail')
+
+    function groupProdByDate(items) {
+      const groups = {}
+      items.forEach(r => {
+        const key = fmtDate(r.created_at)
+        if (!groups[key]) groups[key] = []
+        groups[key].push(r)
+      })
+      return Object.entries(groups)
+    }
+
+    function ProdCard({ r }) {
+      return (
+        <div className="card">
+          <div className="flex justify-between items-start gap-2">
+            <button onClick={() => openDetail('production', r)} className="flex-1 text-left min-w-0">
+              <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
+              <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
+              <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
+              {r.image_url && <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>}
+            </button>
+            <div className="flex flex-col items-end gap-1 shrink-0">
+              <p className="text-brand-yellow font-bold text-lg">
+                {r.quantity}
+                <span className="text-xs font-normal text-gray-400 ml-1">
+                  {r.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
+                </span>
+              </p>
+              <PaidBtn type="production" id={r.id} isPaid={r.is_paid} />
+              <ChevronRight size={15} className="text-gray-500" />
+            </div>
+          </div>
+        </div>
+      )
+    }
+
+    function ProdSection({ items, label, color }) {
+      if (items.length === 0) return <Empty icon="🏭" message={`ຍັງບໍ່ມີ ${label}`} />
+      const grouped = groupProdByDate(items)
+      return (
+        <div className="space-y-4">
+          {grouped.map(([dateLabel, recs]) => (
+            <div key={dateLabel}>
+              <div className="flex items-center gap-2 mb-2">
+                <div className="h-px flex-1 bg-dark-500" />
+                <span className="text-gray-500 text-xs font-medium px-2">📅 {dateLabel}</span>
+                <div className="h-px flex-1 bg-dark-500" />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {recs.map(r => <ProdCard key={r.id} r={r} />)}
+              </div>
+            </div>
+          ))}
+        </div>
+      )
+    }
+
     return (
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <SectionTitle><Factory size={18} className="text-brand-yellow" />ການຜະລິດ ({production.length}) · ຮ້ານດາດ=ໝໍ້ · ຂາຍສົ່ງ=ຕຸກ</SectionTitle>
+        <div className="flex items-center justify-between mb-4">
+          <SectionTitle><Factory size={18} className="text-brand-yellow" />ການຜະລິດ ({production.length})</SectionTitle>
           <ResetBtn type="production" label="ການຜະລິດ" />
         </div>
+
         {production.length === 0 ? <Empty icon="🏭" /> : (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-            {production.map(r => (
-              <div key={r.id} className="card">
-                <div className="flex justify-between items-start gap-2">
-                  <button onClick={() => openDetail('production', r)} className="flex-1 text-left min-w-0">
-                    <p className="text-white font-medium text-sm">{r.products?.type} {r.products?.size}</p>
-                    <p className="text-gray-400 text-xs">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
-                    <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
-                    {r.image_url && <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>}
-                  </button>
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    <p className="text-brand-yellow font-bold text-lg">
-                      {r.quantity}
-                      <span className="text-xs font-normal text-gray-400 ml-1">
-                        {r.destination === 'retail' ? 'ໝໍ້' : 'ຕຸກ'}
-                      </span>
-                    </p>
-                    <span className={`text-xs px-2 py-0.5 rounded-full ${r.destination === 'retail' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
-                      {r.destination === 'retail' ? '🏪 ຮ້ານດາດ' : '🚚 ຂາຍສົ່ງ'}
-                    </span>
-                    {r.destination === 'retail' && <PaidBtn type="production" id={r.id} isPaid={r.is_paid} />}
-                    <ChevronRight size={15} className="text-gray-500" />
-                  </div>
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Column 1: ຂາຍສົ່ງ */}
+            <div>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-blue-400/20">
+                <span className="text-blue-400 font-bold text-sm">🚚 ຂາຍສົ່ງ</span>
+                <span className="text-xs text-gray-500">({wholesaleProd.length} ລາຍການ · ຕຸກ)</span>
               </div>
-            ))}
+              <ProdSection items={wholesaleProd} label="ຂາຍສົ່ງ" color="blue" />
+            </div>
+
+            {/* Column 2: ຮ້ານດາດ */}
+            <div>
+              <div className="flex items-center gap-2 mb-3 pb-2 border-b border-green-400/20">
+                <span className="text-green-400 font-bold text-sm">🏪 ຮ້ານດາດ</span>
+                <span className="text-xs text-gray-500">({retailProd.length} ລາຍການ · ໝໍ້)</span>
+              </div>
+              <ProdSection items={retailProd} label="ຮ້ານດາດ" color="green" />
+            </div>
           </div>
         )}
       </div>
@@ -1464,23 +1519,41 @@ function Inner() {
         {/* ── Store Management ── */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <SectionTitle><Store size={18} className="text-brand-yellow" />ຈັດການຮ້ານຄ້າ</SectionTitle>
+            <SectionTitle><Store size={18} className="text-brand-yellow" />ຈັດການຮ້ານຄ້າ ({stores.length})</SectionTitle>
             <button onClick={openCreateStore} className="btn-primary px-3 py-2 text-sm">
               <Plus size={15} />ເພີ່ມຮ້ານ
             </button>
           </div>
 
+          {/* Search box */}
+          {stores.length > 3 && (
+            <div className="relative mb-3">
+              <input
+                type="search"
+                value={storeSearch}
+                onChange={e => setStoreSearch(e.target.value)}
+                placeholder="🔍 ຄົ້ນຫາຮ້ານ..."
+                className="input-field pl-4 text-sm"
+              />
+            </div>
+          )}
+
           {stores.length === 0 ? (
             <Empty icon="🏪" message="ຍັງບໍ່ມີຮ້ານ — ກົດ ເພີ່ມຮ້ານ ດ້ານເທິງ" />
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {stores.map(store => {
+              {stores.filter(s => !storeSearch || s.name.toLowerCase().includes(storeSearch.toLowerCase())).map(store => {
                 const prices = storePriceMap[store.id] || {}
                 return (
                   <div key={store.id} className="card">
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex-1 min-w-0">
                         <p className="text-white font-semibold text-sm">{store.name}</p>
+                        {store.phone && (
+                          <a href={`tel:${store.phone}`} className="text-green-400 text-xs flex items-center gap-1 mt-0.5 hover:text-green-300">
+                            📞 {store.phone}
+                          </a>
+                        )}
                         {store.maps_url && (
                           <a href={store.maps_url} target="_blank" rel="noopener noreferrer"
                             className="text-blue-400 text-xs flex items-center gap-1 mt-0.5 hover:text-blue-300">
@@ -1804,6 +1877,19 @@ function Inner() {
               value={storeForm.name}
               onChange={e => setStoreForm(f => ({ ...f, name: e.target.value }))}
               placeholder="ຊື່ຮ້ານຄ້າ"
+              className="input-field"
+            />
+          </div>
+
+          <div>
+            <label className="field-label flex items-center gap-1.5">
+              📞 ເບີໂທຮ້ານ (ທາງເລືອກ)
+            </label>
+            <input
+              type="tel"
+              value={storeForm.phone}
+              onChange={e => setStoreForm(f => ({ ...f, phone: e.target.value }))}
+              placeholder="020 XXXX XXXX"
               className="input-field"
             />
           </div>
