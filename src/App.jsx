@@ -13,6 +13,10 @@ import logoImg from './assets/logo.png'
 export const AuthContext = createContext(null)
 export const useAuth = () => useContext(AuthContext)
 
+// ─── Theme Context ─────────────────────────────────────────────────────────
+export const ThemeContext = createContext({ theme: 'dark', toggleTheme: () => {} })
+export const useTheme = () => useContext(ThemeContext)
+
 // ─── Loader ───────────────────────────────────────────────────────────────
 function Loader() {
   return (
@@ -39,6 +43,14 @@ export default function App() {
   const [user, setUser]       = useState(null)
   const [profile, setProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [theme, setTheme]     = useState(() => localStorage.getItem('theme') || 'dark')
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  const toggleTheme = () => setTheme(t => t === 'dark' ? 'light' : 'dark')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -75,6 +87,7 @@ export default function App() {
   const roleRedirect = profile ? `/${profile.role}` : '/login'
 
   return (
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
     <AuthContext.Provider value={{ user, profile, loading, signOut, fetchProfile }}>
       <BrowserRouter>
         <Routes>
@@ -122,5 +135,6 @@ export default function App() {
         </Routes>
       </BrowserRouter>
     </AuthContext.Provider>
+    </ThemeContext.Provider>
   )
 }

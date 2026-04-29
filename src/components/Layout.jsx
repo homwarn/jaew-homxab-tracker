@@ -1,10 +1,11 @@
-import { useAuth } from '../App'
-import { LogOut } from 'lucide-react'
+import { useAuth, useTheme } from '../App'
+import { LogOut, Sun, Moon } from 'lucide-react'
 import logoImg from '../assets/logo.png'
 
 // ─── Top Header ───────────────────────────────────────────────────────────
 export function Header({ title, subtitle }) {
   const { profile, signOut } = useAuth()
+  const { theme, toggleTheme } = useTheme()
 
   return (
     <header className="sticky top-0 z-40 bg-dark-900/95 backdrop-blur-sm border-b border-dark-500 px-4 md:px-6 py-3 safe-top">
@@ -17,10 +18,18 @@ export function Header({ title, subtitle }) {
           </div>
         </div>
         <div className="flex items-center gap-2 md:gap-3">
-          <div className="text-right">
+          <div className="text-right hidden sm:block">
             <p className="text-white text-xs md:text-sm font-medium leading-none">{profile?.name}</p>
             <p className="text-gray-500 text-xs mt-0.5">{ROLE_LABELS[profile?.role]}</p>
           </div>
+          {/* Theme toggle */}
+          <button
+            onClick={toggleTheme}
+            className="p-2 rounded-xl bg-dark-600 text-gray-400 hover:text-brand-yellow hover:bg-dark-500 transition-colors"
+            title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+          >
+            {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
           <button
             onClick={signOut}
             className="p-2 rounded-xl bg-dark-600 text-gray-400 hover:text-red-400 hover:bg-red-900/20 transition-colors"

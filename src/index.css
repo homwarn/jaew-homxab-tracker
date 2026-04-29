@@ -4,6 +4,41 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ── CSS Variables (Dark Theme default) ──────────────────────────── */
+:root {
+  --brand-yellow:       #F5C518;
+  --brand-yellow-dark:  #D4A017;
+  --brand-yellow-light: #FDE68A;
+  --dark-900: #0a0a0a;
+  --dark-800: #111111;
+  --dark-700: #1a1a1a;
+  --dark-600: #222222;
+  --dark-500: #2a2a2a;
+  --dark-400: #383838;
+  --dark-300: #4a4a4a;
+  color-scheme: dark;
+}
+
+/* ── Light Theme overrides ───────────────────────────────────────── */
+:root[data-theme='light'] {
+  --dark-900: #f0f4f8;
+  --dark-800: #ffffff;
+  --dark-700: #f8fafc;
+  --dark-600: #eef2f7;
+  --dark-500: #e2e8f0;
+  --dark-400: #cbd5e1;
+  --dark-300: #94a3b8;
+  color-scheme: light;
+}
+:root[data-theme='light'] body { color: #0f172a; }
+:root[data-theme='light'] .text-white  { color: #0f172a !important; }
+:root[data-theme='light'] .text-gray-400 { color: #475569 !important; }
+:root[data-theme='light'] .text-gray-500 { color: #64748b !important; }
+:root[data-theme='light'] .text-gray-300 { color: #334155 !important; }
+:root[data-theme='light'] .placeholder-dark-300::placeholder { color: #94a3b8 !important; }
+:root[data-theme='light'] .border-dark-500 { border-color: #e2e8f0 !important; }
+:root[data-theme='light'] img { filter: none !important; }
+
 @layer base {
   * {
     box-sizing: border-box;
