@@ -101,6 +101,7 @@ function Inner() {
   const [notifEditForm, setNotifEditForm]         = useState({ message: '', items: [] })
   const [cancelAllNotifConfirm, setCancelAllNotifConfirm] = useState(false)
   const [resetEverythingConfirm, setResetEverythingConfirm] = useState(false)
+  const [clearOrdersConfirm, setClearOrdersConfirm] = useState(false)
 
   // Store management form
   const [showStoreForm, setShowStoreForm] = useState(false)
@@ -282,6 +283,19 @@ function Inner() {
       load()
     } catch (err) {
       toast.error('Reset ຜິດພາດ: ' + err.message)
+    }
+  }
+
+  // ─── Clear all seller orders ───────────────────────────────────────────
+  async function clearAllOrders() {
+    try {
+      const { error } = await supabase.from('orders').delete().not('id', 'is', null)
+      if (error) throw error
+      toast.success('ລຶບລາຍການສັ່ງທັງໝົດສຳເລັດ ✅')
+      setClearOrdersConfirm(false)
+      load()
+    } catch (err) {
+      toast.error('ຜິດພາດ: ' + err.message)
     }
   }
 
@@ -1225,6 +1239,14 @@ function Inner() {
                 <span className="bg-yellow-500 text-dark-900 text-xs font-bold px-2 py-0.5 rounded-full ml-1">{byStatus.pending.length}</span>
               )}
             </SectionTitle>
+            {orders.length > 0 && (
+              <button
+                onClick={() => setClearOrdersConfirm(true)}
+                className="text-xs text-red-400 border border-red-800 rounded-xl px-3 py-1.5 hover:bg-red-900/30 transition-colors flex items-center gap-1.5 shrink-0"
+              >
+                <Trash2 size={13} /> ລຶບທັງໝົດ
+              </button>
+            )}
           </div>
           <p className="text-gray-500 text-xs mb-3 bg-dark-800 border border-dark-500 rounded-xl px-3 py-2">
             💡 ກົດ <span className="text-blue-400 font-medium">ຢືນຢັນ</span> — ລາຍການຈະຖືກສ້າງເປັນຄຳສັ່ງ Distributor ໂດຍອັດຕະໂນມັດ
@@ -2147,6 +2169,17 @@ function Inner() {
         title="⚠️ ຍົກເລີກຄຳສັ່ງທັງໝົດ"
         message={`ທ່ານຕ້ອງການຍົກເລີກ ${notifications.filter(n => n.status !== 'delivered').length} ຄຳສັ່ງທີ່ຍັງຄ້າງຢູ່ທັງໝົດ ແທ້ບໍ?\n\nຄຳສັ່ງທີ່ ສົ່ງສຳເລັດ (delivered) ຈະບໍ່ຖືກລຶບ.`}
         confirmLabel="ຍົກເລີກທັງໝົດ"
+        danger
+      />
+
+      {/* ── Clear All Seller Orders Confirm ──────────────────────────────── */}
+      <ConfirmDialog
+        open={clearOrdersConfirm}
+        onClose={() => setClearOrdersConfirm(false)}
+        onConfirm={clearAllOrders}
+        title="⚠️ ລຶບລາຍການສັ່ງທັງໝົດ"
+        message={`ທ່ານຕ້ອງການລຶບລາຍການສັ່ງຈາກ Seller ທັງໝົດ (${orders.length} ລາຍການ) ແທ້ບໍ?\n\nຂໍ້ມູນທັງໝົດຈະຖືກລຶບຖາວອນ ແລະ ກູ້ຄືນບໍ່ໄດ້.`}
+        confirmLabel="ລຶບທັງໝົດ"
         danger
       />
 

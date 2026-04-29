@@ -53,6 +53,8 @@ function Inner() {
   const [deliveryImg, setDeliveryImg]           = useState(null)
   const [formNotes, setFormNotes]               = useState('')
   const [saving, setSaving]                     = useState(false)
+  const [deliveryFee, setDeliveryFee]           = useState(() => localStorage.getItem('dist_delivery_fee') || '')
+  const [prevBillAmount, setPrevBillAmount]     = useState('')
 
   // ── Detail modal (history) ───────────────────────────────────────────────
   const [detail, setDetail]         = useState(null)
@@ -101,6 +103,26 @@ function Inner() {
     return () => supabase.removeChannel(ch)
   }, [load])
 
+  // ─── Auto-fill previous bill amount ──────────────────────────────────
+  useEffect(() => {
+    if (paymentPeriod === 'previous' && activeNotif?.store_name) {
+      const storeDists = distributions
+        .filter(r => r.store_name === activeNotif.store_name)
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+      if (storeDists.length > 0) {
+        // Group by notification_id — find the most recent delivery batch
+        const latestNotifId = storeDists[0].notification_id
+        const latestBatch = latestNotifId
+          ? storeDists.filter(r => r.notification_id === latestNotifId)
+          : [storeDists[0]]
+        const total = latestBatch.reduce((s, r) => s + (r.quantity || 0) * (r.unit_price || 0), 0)
+        if (total > 0) setPrevBillAmount(String(Math.round(total)))
+      }
+    } else if (paymentPeriod === 'current') {
+      setPrevBillAmount('')
+    }
+  }, [paymentPeriod, activeNotif?.store_name, distributions])
+
   // ─── Acknowledge notification ──────────────────────────────────────────
   async function acknowledgeNotif(id) {
     try {
@@ -147,6 +169,7 @@ function Inner() {
     setTransferNote('')
     setSlipImg(null); setDeliveryImg(null)
     setFormNotes('')
+    setPrevBillAmount('')
     setShowDeliveryForm(true)
   }
 
@@ -159,6 +182,9 @@ function Inner() {
     if (payMethod === 'cash' && !receiverName.trim()) { toast.error('ໃສ່ຊື່ຜູ້ຮັບເງິນ'); return }
     setSaving(true)
     try {
+      // Persist delivery fee for next session
+      localStorage.setItem('dist_delivery_fee', deliveryFee)
+
       const records = valid.map(i => ({
         product_id:         i.product_id,
         quantity:           parseInt(i.quantity),
@@ -174,6 +200,8 @@ function Inner() {
         notes:              formNotes || null,
         notification_id:    activeNotif.id,
         created_by:         user.id,
+        delivery_fee:       parseFloat(deliveryFee) || 0,
+        prev_bill_amount:   paymentPeriod === 'previous' ? (parseFloat(prevBillAmount) || null) : null,
       }))
 
       const { error: distErr } = await supabase.from('distribution').insert(records)
@@ -750,6 +778,29 @@ function Inner() {
               </div>
             </div>
 
+            {/* Previous bill amount — shown when paymentPeriod = 'previous' */}
+            {paymentPeriod === 'previous' && (
+              <div className="bg-blue-900/20 border border-blue-500/30 rounded-2xl p-3 space-y-2">
+                <p className="text-blue-400 text-xs font-semibold flex items-center gap-1.5">
+                  🔄 ຍອດບິນງວດກ່ອນ (ດຶງຈາກການສົ່ງຫຼ້າສຸດ)
+                </p>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min="0"
+                  value={prevBillAmount}
+                  onChange={e => setPrevBillAmount(e.target.value)}
+                  placeholder="ຍອດລວມ ₭"
+                  className="input-field text-blue-300 font-bold"
+                />
+                {prevBillAmount && parseFloat(prevBillAmount) > 0 && (
+                  <p className="text-blue-300 text-xs text-right font-semibold">
+                    💰 {parseFloat(prevBillAmount).toLocaleString('lo-LA')} ₭
+                  </p>
+                )}
+              </div>
+            )}
+
             <div>
               <label className="field-label">ໝາຍເຫດ</label>
               <textarea
@@ -771,6 +822,25 @@ function Inner() {
                 </div>
               ) : null
             })()}
+
+            {/* Delivery fee — persists via localStorage */}
+            <div>
+              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ຈຳບໍ່ຕ່ອງຕ້ອງ</span></label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min="0"
+                value={deliveryFee}
+                onChange={e => setDeliveryFee(e.target.value)}
+                placeholder="0"
+                className="input-field"
+              />
+              {deliveryFee && parseFloat(deliveryFee) > 0 && (
+                <p className="text-gray-400 text-xs mt-1 text-right">
+                  ຄ່າສົ່ງ: {parseFloat(deliveryFee).toLocaleString('lo-LA')} ₭
+                </p>
+              )}
+            </div>
 
             {/* Print invoice preview button */}
             <button
