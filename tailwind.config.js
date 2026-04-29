@@ -5,18 +5,18 @@ export default {
     extend: {
       colors: {
         brand: {
-          yellow:       'var(--brand-yellow, #F5C518)',
-          'yellow-dark':'var(--brand-yellow-dark, #D4A017)',
-          'yellow-light':'var(--brand-yellow-light, #FDE68A)',
+          yellow: '#F5C518',
+          'yellow-dark': '#D4A017',
+          'yellow-light': '#FDE68A',
         },
         dark: {
-          900: 'var(--dark-900, #0a0a0a)',
-          800: 'var(--dark-800, #111111)',
-          700: 'var(--dark-700, #1a1a1a)',
-          600: 'var(--dark-600, #222222)',
-          500: 'var(--dark-500, #2a2a2a)',
-          400: 'var(--dark-400, #383838)',
-          300: 'var(--dark-300, #4a4a4a)',
+          900: '#0a0a0a',
+          800: '#111111',
+          700: '#1a1a1a',
+          600: '#222222',
+          500: '#2a2a2a',
+          400: '#383838',
+          300: '#4a4a4a',
         },
       },
       fontFamily: {
