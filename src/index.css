@@ -171,6 +171,23 @@ html { scroll-behavior: smooth; }
 .toggle-track.on .toggle-thumb  { transform: translateX(26px); }
 .toggle-track.off .toggle-thumb { transform: translateX(0); }
 
+/* Glow text — store name in delivery form */
+@keyframes glow-text-yellow {
+  0%, 100% {
+    text-shadow: 0 0 8px rgba(245,197,24,0.55),
+                 0 0 20px rgba(245,197,24,0.3);
+  }
+  50% {
+    text-shadow: 0 0 18px rgba(245,197,24,1),
+                 0 0 40px rgba(245,197,24,0.6),
+                 0 0 70px rgba(245,197,24,0.25);
+  }
+}
+.text-glow-yellow {
+  color: #F5C518;
+  animation: glow-text-yellow 2s ease-in-out infinite;
+}
+
 /* Glow pulse — producer record button */
 @keyframes glow-yellow {
   0%, 100% {

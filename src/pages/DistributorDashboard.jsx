@@ -204,7 +204,13 @@ function Inner() {
         prev_bill_amount:   paymentPeriod === 'previous' ? (parseFloat(prevBillAmount) || null) : null,
       }))
 
-      const { error: distErr } = await supabase.from('distribution').insert(records)
+      let { error: distErr } = await supabase.from('distribution').insert(records)
+      if (distErr?.message?.includes('delivery_fee') || distErr?.message?.includes('prev_bill_amount')) {
+        // Column not yet in DB — run upgrade-v8.sql. Retry without new columns.
+        const safeRecords = records.map(({ delivery_fee, prev_bill_amount, ...rest }) => rest)
+        const { error: retryErr } = await supabase.from('distribution').insert(safeRecords)
+        distErr = retryErr
+      }
       if (distErr) throw distErr
 
       const { error: notifErr } = await supabase
@@ -438,8 +444,55 @@ function Inner() {
       return <Empty icon="🚚" message="ຍັງບໍ່ມີປະຫວັດການກະຈາຍ" />
     }
 
+    // ── Delivery fee summary per store ──
+    const feeRows = grouped
+      .map(([storeName, records]) => {
+        const totalFee = records.reduce((s, r) => s + (r.delivery_fee || 0), 0)
+        const paidFee  = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
+        return { storeName, totalFee, allPaid: totalFee > 0 && paidFee >= totalFee }
+      })
+      .filter(row => row.totalFee > 0)
+    const grandFee = feeRows.reduce((s, r) => s + r.totalFee, 0)
+
     return (
       <div className="space-y-6">
+
+        {/* ── Delivery fee summary card ── */}
+        {feeRows.length > 0 && (
+          <div className="card border-brand-yellow/20 bg-dark-800/60">
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-brand-yellow font-bold text-sm flex items-center gap-2">
+                🚚 ສະຫຼຸບຄ່າຂົນສົ່ງ
+              </p>
+              {grandFee > 0 && (
+                <span className="text-brand-yellow font-bold text-sm">
+                  ລວມ: {grandFee.toLocaleString('lo-LA')} ₭
+                </span>
+              )}
+            </div>
+            <div className="space-y-2">
+              {feeRows.map(row => (
+                <div key={row.storeName} className="flex items-center justify-between py-1.5 border-b border-dark-500 last:border-0">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Store size={13} className="text-gray-400 shrink-0" />
+                    <span className="text-gray-300 text-sm truncate">{row.storeName}</span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span className="text-white font-semibold text-sm">{row.totalFee.toLocaleString('lo-LA')} ₭</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                      row.allPaid
+                        ? 'bg-green-900/40 text-green-400 border border-green-700/40'
+                        : 'bg-orange-900/40 text-orange-400 border border-orange-700/40'
+                    }`}>
+                      {row.allPaid ? '✅ ຈ່າຍແລ້ວ' : '⏳ ຄ້າງ'}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {grouped.map(([storeName, records]) => {
           const totalQty    = records.reduce((s, r) => s + r.quantity, 0)
           const totalAmount = records.reduce((s, r) => s + r.quantity * (r.unit_price || 0), 0)
@@ -579,64 +632,25 @@ function Inner() {
         {activeNotif && (
           <form onSubmit={handleDeliverySubmit} className="space-y-4">
 
-            {/* Store info (read-only) + Location QR */}
-            <div className="bg-dark-700/60 rounded-2xl p-3 space-y-2">
-              <div className="flex items-start gap-2">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Store size={16} className="text-brand-yellow" />
-                    <p className="text-white font-semibold text-sm">{activeNotif.store_name}</p>
-                  </div>
-                  {/* Phone number from stores data */}
-                  {(() => {
-                    const storeData = stores.find(s => s.id === activeNotif.store_id)
-                    return storeData?.phone ? (
-                      <a href={`tel:${storeData.phone}`} className="text-green-400 text-xs flex items-center gap-1 pl-6 mt-0.5 hover:text-green-300">
-                        📞 {storeData.phone}
-                      </a>
-                    ) : null
-                  })()}
-                  {activeNotif.store_maps_url && (
-                    <a
-                      href={activeNotif.store_maps_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 text-xs flex items-center gap-1 pl-6 mt-1 hover:text-blue-300"
-                    >
-                      <MapPin size={11} /> ເປີດ Google Maps
-                    </a>
-                  )}
-                </div>
-                {activeNotif.store_maps_url && (
-                  <div className="text-center shrink-0">
-                    <img
-                      src={`https://api.qrserver.com/v1/create-qr-code/?size=72x72&data=${encodeURIComponent(activeNotif.store_maps_url)}&margin=2`}
-                      alt="Location QR"
-                      className="rounded-lg border border-dark-400"
-                      width={72} height={72}
-                    />
-                    <p className="text-gray-500 text-[9px] mt-0.5">📍 ທີ່ຕັ້ງ</p>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Payment QR code for customer */}
-            <div className="bg-dark-700/60 rounded-2xl p-3">
-              <p className="text-gray-400 text-xs font-medium mb-2 flex items-center gap-1.5">
-                <QrCode size={13} className="text-brand-yellow" /> QR ຊຳລະເງິນ (ໃຫ້ລູກຄ້າ Scan)
+            {/* ── Store name — glowing yellow, prominent ── */}
+            <div className="bg-dark-700/60 rounded-2xl p-4 text-center border border-brand-yellow/20">
+              <p className="text-gray-500 text-xs mb-1 flex items-center justify-center gap-1">
+                <Store size={12} /> ຮ້ານຄ້າ
               </p>
-              <div className="flex justify-center">
-                <img
-                  src="/qr-payment.jpg"
-                  alt="QR ຊຳລະ"
-                  className="rounded-xl object-contain border border-dark-400"
-                  style={{ maxWidth: 160, maxHeight: 160 }}
-                />
-              </div>
+              <p className="text-glow-yellow font-bold text-2xl tracking-wide leading-tight">
+                {activeNotif.store_name}
+              </p>
+              {(() => {
+                const storeData = stores.find(s => s.id === activeNotif.store_id)
+                return storeData?.phone ? (
+                  <a href={`tel:${storeData.phone}`} className="text-green-400 text-sm flex items-center justify-center gap-1.5 mt-2 hover:text-green-300">
+                    📞 {storeData.phone}
+                  </a>
+                ) : null
+              })()}
             </div>
 
-            {/* Items — qty editable, price editable, name read-only */}
+            {/* ── Items — moved to TOP, qty + price editable ── */}
             <div className="space-y-2">
               <label className="field-label">ລາຍການສິນຄ້າ</label>
               {deliveryItems.map((item, i) => (
@@ -825,7 +839,7 @@ function Inner() {
 
             {/* Delivery fee — persists via localStorage */}
             <div>
-              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ຈຳບໍ່ຕ່ອງຕ້ອງ</span></label>
+              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ທາງເລືອກ</span></label>
               <input
                 type="number"
                 inputMode="numeric"
@@ -840,6 +854,21 @@ function Inner() {
                   ຄ່າສົ່ງ: {parseFloat(deliveryFee).toLocaleString('lo-LA')} ₭
                 </p>
               )}
+            </div>
+
+            {/* ── QR payment (moved here — bottom) ── */}
+            <div className="bg-dark-700/60 rounded-2xl p-3">
+              <p className="text-gray-400 text-xs font-medium mb-2 flex items-center gap-1.5">
+                <QrCode size={13} className="text-brand-yellow" /> QR ຊຳລະເງິນ (ໃຫ້ລູກຄ້າ Scan)
+              </p>
+              <div className="flex justify-center">
+                <img
+                  src="/qr-payment.jpg"
+                  alt="QR ຊຳລະ"
+                  className="rounded-xl object-contain border border-dark-400"
+                  style={{ maxWidth: 160, maxHeight: 160 }}
+                />
+              </div>
             </div>
 
             {/* Print invoice preview button */}

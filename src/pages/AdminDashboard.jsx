@@ -309,6 +309,18 @@ function Inner() {
     } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
 
+  // ─── Toggle delivery fee paid ──────────────────────────────────────────
+  async function toggleDeliveryFeePaid(id, currentValue) {
+    try {
+      const { error } = await supabase
+        .from('distribution')
+        .update({ delivery_fee_paid: !currentValue })
+        .eq('id', id)
+      if (error) throw error
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
   // ─── Order status ──────────────────────────────────────────────────────
   async function updateOrderStatus(id, status) {
     try {
@@ -1378,6 +1390,101 @@ function Inner() {
             </div>
           )}
         </div>
+
+        {/* ════ SECTION D: ຄ່າຂົນສົ່ງ ════ */}
+        {(() => {
+          // Group all distribution records by store, sum delivery_fee
+          const feeByStore = {}
+          distrib.forEach(r => {
+            if (!r.delivery_fee || r.delivery_fee === 0) return
+            const key = r.store_name || 'ບໍ່ລະບຸ'
+            if (!feeByStore[key]) feeByStore[key] = { records: [], totalFee: 0 }
+            feeByStore[key].records.push(r)
+            feeByStore[key].totalFee += r.delivery_fee || 0
+          })
+          const storeEntries = Object.entries(feeByStore)
+            .sort((a, b) => b[1].totalFee - a[1].totalFee)
+          const grandTotal = storeEntries.reduce((s, [, v]) => s + v.totalFee, 0)
+          if (storeEntries.length === 0) return null
+          return (
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <SectionTitle>
+                  <Truck size={18} className="text-brand-yellow" />
+                  ຄ່າຂົນສົ່ງ ({storeEntries.length} ຮ້ານ)
+                </SectionTitle>
+                <span className="text-brand-yellow font-bold text-sm">
+                  ລວມ: {grandTotal.toLocaleString('lo-LA')} ₭
+                </span>
+              </div>
+              <div className="space-y-3">
+                {storeEntries.map(([storeName, { records, totalFee }]) => {
+                  const paidFee   = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
+                  const unpaidFee = totalFee - paidFee
+                  // Deduplicate by notification_id (each delivery batch)
+                  const byNotif = {}
+                  records.forEach(r => {
+                    const k = r.notification_id || r.id
+                    if (!byNotif[k]) byNotif[k] = { id: r.id, notifId: k, fee: 0, paid: r.delivery_fee_paid, date: r.created_at, storeName: r.store_name, distribName: r.created_by }
+                    byNotif[k].fee = Math.max(byNotif[k].fee, r.delivery_fee || 0)
+                    if (r.delivery_fee_paid) byNotif[k].paid = true
+                  })
+                  const batches = Object.values(byNotif).sort((a, b) => new Date(b.date) - new Date(a.date))
+                  return (
+                    <div key={storeName} className="card border-dark-400">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-white font-semibold flex items-center gap-2">
+                          <Store size={14} className="text-brand-yellow" />
+                          {storeName}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {unpaidFee > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900/30 text-orange-400 border border-orange-700/30">
+                              ⏳ ຄ້າງ {unpaidFee.toLocaleString('lo-LA')} ₭
+                            </span>
+                          )}
+                          {paidFee > 0 && (
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 border border-green-700/30">
+                              ✅ {paidFee.toLocaleString('lo-LA')} ₭
+                            </span>
+                          )}
+                          <span className="text-brand-yellow font-bold text-sm">{totalFee.toLocaleString('lo-LA')} ₭</span>
+                        </div>
+                      </div>
+                      <div className="space-y-1.5">
+                        {batches.map(b => {
+                          const distribUser = users.find(u => u.id === b.distribName)
+                          return (
+                            <div key={b.notifId} className={`flex items-center justify-between rounded-xl px-3 py-2 ${b.paid ? 'bg-green-900/10' : 'bg-dark-600'}`}>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-gray-300 text-xs">{fmtDateTime(b.date)}</p>
+                                {distribUser && <p className="text-gray-500 text-xs">🚚 {distribUser.name}</p>}
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className={`text-sm font-semibold ${b.paid ? 'text-green-400' : 'text-white'}`}>{b.fee.toLocaleString('lo-LA')} ₭</span>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleDeliveryFeePaid(b.id, b.paid)}
+                                  className={`text-xs px-2.5 py-1 rounded-lg font-semibold transition-all active:scale-95 ${
+                                    b.paid
+                                      ? 'bg-green-700/60 text-green-300 border border-green-600/40 hover:bg-green-700/80'
+                                      : 'bg-dark-500 text-gray-400 border border-dark-300 hover:bg-dark-400'
+                                  }`}
+                                >
+                                  {b.paid ? '✅ ຈ່າຍແລ້ວ' : '⬜ ຄ້າງ'}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
 
       </div>
     )
