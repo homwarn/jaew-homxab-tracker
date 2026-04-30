@@ -20,7 +20,6 @@ exports.handler = async (event) => {
   }
 
   const SUPABASE_URL = process.env.VITE_SUPABASE_URL
-  const ANON_KEY     = process.env.VITE_SUPABASE_ANON_KEY
   const SERVICE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!SUPABASE_URL || !SERVICE_KEY) {
@@ -31,12 +30,11 @@ exports.handler = async (event) => {
     const authHeader = event.headers.authorization || event.headers.Authorization
     if (!authHeader?.startsWith('Bearer ')) throw new Error('Missing Authorization header')
 
-    const adminClient  = createClient(SUPABASE_URL, SERVICE_KEY)
-    const callerClient = createClient(SUPABASE_URL, ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    })
+    const adminClient = createClient(SUPABASE_URL, SERVICE_KEY)
 
-    const { data: { user: caller }, error: authErr } = await callerClient.auth.getUser()
+    // Verify the caller's JWT directly — no stored session in serverless context.
+    const token = authHeader.replace(/^Bearer\s+/i, '')
+    const { data: { user: caller }, error: authErr } = await adminClient.auth.getUser(token)
     if (authErr || !caller) throw new Error('Unauthorized')
 
     const { data: callerProfile } = await adminClient

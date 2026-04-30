@@ -212,14 +212,23 @@ export function printInvoice(opts) {
 
 <div class="print-btn">
   <!-- Paper size selector -->
-  <div style="display:flex;gap:8px;justify-content:center;margin-bottom:12px;">
-    <button id="btnReceipt" onclick="setPaper('receipt')"
-      style="padding:7px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#F5C518;color:#111;border:none;">
-      🧾 80mm Receipt
+  <p style="font-size:11px;color:#888;margin-bottom:6px;text-align:center;">ເລືອກຂະໜາດເຈ້ຍ:</p>
+  <div style="display:flex;gap:6px;justify-content:center;margin-bottom:12px;flex-wrap:wrap;">
+    <button id="btn_receipt" onclick="setPaper('receipt')"
+      style="padding:6px 13px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#F5C518;color:#111;border:none;">
+      🧾 80mm
     </button>
-    <button id="btnA4" onclick="setPaper('a4')"
-      style="padding:7px 18px;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;background:#eee;color:#555;border:none;">
+    <button id="btn_a5" onclick="setPaper('a5')"
+      style="padding:6px 13px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#eee;color:#555;border:none;">
+      📄 A5
+    </button>
+    <button id="btn_a4" onclick="setPaper('a4')"
+      style="padding:6px 13px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#eee;color:#555;border:none;">
       📄 A4
+    </button>
+    <button id="btn_letter" onclick="setPaper('letter')"
+      style="padding:6px 13px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;background:#eee;color:#555;border:none;">
+      📄 Letter
     </button>
   </div>
   <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
@@ -237,21 +246,24 @@ export function printInvoice(opts) {
 </div>
 <style id="paperStyle"></style>
 <script>
+var sizes = {
+  receipt: { maxWidth:'400px', page:'@page{size:80mm auto;margin:3mm 4mm;}', bodyFs:'13px', cellPad:'5px 6px', cellFs:'12px' },
+  a5:      { maxWidth:'540px', page:'@page{size:A5 portrait;margin:10mm;}',  bodyFs:'13px', cellPad:'6px 7px', cellFs:'12px' },
+  a4:      { maxWidth:'700px', page:'@page{size:A4 portrait;margin:12mm;}',  bodyFs:'14px', cellPad:'7px 8px', cellFs:'13px' },
+  letter:  { maxWidth:'720px', page:'@page{size:letter portrait;margin:15mm;}', bodyFs:'14px', cellPad:'7px 8px', cellFs:'13px' },
+};
+var allBtns = ['receipt','a5','a4','letter'];
 function setPaper(size) {
-  var s = document.getElementById('paperStyle');
-  var btnR = document.getElementById('btnReceipt');
-  var btnA = document.getElementById('btnA4');
-  if (size === 'a4') {
-    document.body.style.maxWidth = '700px';
-    s.textContent = '@page { size: A4 portrait; margin: 12mm; } body { font-size: 14px !important; } th, td { padding: 7px 8px !important; font-size: 13px !important; }';
-    btnA.style.background = '#F5C518'; btnA.style.color = '#111';
-    btnR.style.background = '#eee';    btnR.style.color = '#555';
-  } else {
-    document.body.style.maxWidth = '400px';
-    s.textContent = '@page { size: 80mm auto; margin: 3mm 4mm; }';
-    btnR.style.background = '#F5C518'; btnR.style.color = '#111';
-    btnA.style.background = '#eee';    btnA.style.color = '#555';
-  }
+  var cfg = sizes[size] || sizes.receipt;
+  document.body.style.maxWidth = cfg.maxWidth;
+  document.getElementById('paperStyle').textContent =
+    cfg.page +
+    ' body{font-size:' + cfg.bodyFs + ' !important;}' +
+    ' th,td{padding:' + cfg.cellPad + ' !important;font-size:' + cfg.cellFs + ' !important;}';
+  allBtns.forEach(function(k) {
+    var b = document.getElementById('btn_' + k);
+    if (b) { b.style.background = k===size ? '#F5C518' : '#eee'; b.style.color = k===size ? '#111' : '#555'; }
+  });
 }
 setPaper('receipt');
 </script>
