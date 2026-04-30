@@ -53,7 +53,7 @@ function Inner() {
   const [deliveryImg, setDeliveryImg]           = useState(null)
   const [formNotes, setFormNotes]               = useState('')
   const [saving, setSaving]                     = useState(false)
-  const [deliveryFee, setDeliveryFee]           = useState(() => localStorage.getItem('dist_delivery_fee') || '')
+  const [deliveryFee, setDeliveryFee]           = useState('')
   const [prevBillAmount, setPrevBillAmount]     = useState('')
 
   // ── Detail modal (history) ───────────────────────────────────────────────
@@ -170,6 +170,9 @@ function Inner() {
     setSlipImg(null); setDeliveryImg(null)
     setFormNotes('')
     setPrevBillAmount('')
+    // Load delivery fee remembered per store
+    const savedFee = localStorage.getItem('dist_delivery_fee_' + notif.store_name) || ''
+    setDeliveryFee(savedFee)
     setShowDeliveryForm(true)
   }
 
@@ -182,8 +185,10 @@ function Inner() {
     if (payMethod === 'cash' && !receiverName.trim()) { toast.error('ໃສ່ຊື່ຜູ້ຮັບເງິນ'); return }
     setSaving(true)
     try {
-      // Persist delivery fee for next session
-      localStorage.setItem('dist_delivery_fee', deliveryFee)
+      // Persist delivery fee per store for next session
+      if (activeNotif.store_name) {
+        localStorage.setItem('dist_delivery_fee_' + activeNotif.store_name, deliveryFee)
+      }
 
       const records = valid.map(i => ({
         product_id:         i.product_id,
@@ -310,16 +315,6 @@ function Inner() {
             <p className="text-white font-semibold text-sm leading-tight">
               {notif.store_name || 'ຮ້ານຄ້າ'}
             </p>
-            {notif.store_maps_url && (
-              <a
-                href={notif.store_maps_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-xs text-blue-400 flex items-center gap-1 mt-0.5 hover:text-blue-300"
-              >
-                <MapPin size={11} /> ເປີດ Google Maps →
-              </a>
-            )}
             {notif.message && (
               <p className="text-gray-400 text-xs mt-0.5 break-words">{notif.message}</p>
             )}
@@ -330,6 +325,18 @@ function Inner() {
               <p className="text-blue-400 text-xs mt-0.5">📢 ສົ່ງໃຫ້ທຸກ Distributor</p>
             )}
           </div>
+          {/* Location link — top-right corner (shown on acknowledged cards) */}
+          {isAcked && notif.store_maps_url && (
+            <a
+              href={notif.store_maps_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="shrink-0 flex flex-col items-center gap-0.5 bg-blue-900/30 border border-blue-500/40 rounded-xl px-2.5 py-1.5 hover:bg-blue-900/50 transition-colors"
+            >
+              <MapPin size={16} className="text-blue-400" />
+              <span className="text-blue-400 text-[9px] font-semibold">Maps</span>
+            </a>
+          )}
         </div>
 
         {/* Items list */}
@@ -839,7 +846,7 @@ function Inner() {
 
             {/* Delivery fee — persists via localStorage */}
             <div>
-              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ທາງເລືອກ</span></label>
+              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ຈຳຄ່າຕາມຮ້ານ, ແກ້ໄຂໄດ້</span></label>
               <input
                 type="number"
                 inputMode="numeric"
