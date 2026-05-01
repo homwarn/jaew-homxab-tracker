@@ -284,10 +284,10 @@ function Inner() {
   const pendingCount    = pendingNotifs.length + ackedNotifs.length
   const paidDists       = distributions.filter(r => r.is_paid)
 
-  // Group distributions by store
+  // Group distributions by store — exclude paid records (those go to archive)
   function getGroupedHistory() {
     const map = {}
-    distributions.forEach(r => {
+    distributions.filter(r => !r.is_paid).forEach(r => {
       const key = r.store_name || 'ບໍ່ລະບຸ'
       if (!map[key]) map[key] = []
       map[key].push(r)
@@ -410,6 +410,47 @@ function Inner() {
                   </div>
                 )
               })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ─── Archive: paid delivery fees ──────────────────────────────────────
+  function renderPaidFeesDistArchive() {
+    const paidFeeRecs = distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0)
+    if (paidFeeRecs.length === 0)
+      return <div className="flex flex-col items-center py-10 gap-2 text-gray-500"><span className="text-3xl">🚚</span><p className="text-sm">ຍັງບໍ່ມີລາຍການ</p></div>
+
+    // Group by store
+    const byStore = {}
+    paidFeeRecs.forEach(r => {
+      const key = r.store_name || 'ບໍ່ລະບຸ'
+      if (!byStore[key]) byStore[key] = { records: [], total: 0 }
+      byStore[key].records.push(r)
+      byStore[key].total += r.delivery_fee || 0
+    })
+    return (
+      <div className="space-y-4">
+        {Object.entries(byStore).map(([storeName, { records, total }]) => (
+          <div key={storeName}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-white text-xs font-semibold flex items-center gap-1.5">
+                <Store size={12} className="text-brand-yellow" /> {storeName}
+              </p>
+              <span className="text-green-400 text-xs font-bold">{total.toLocaleString('lo-LA')} ₭ ✅</span>
+            </div>
+            <div className="space-y-1.5">
+              {records.map(r => (
+                <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 border border-green-900/30 flex items-center justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-400 text-xs">{fmtDate(r.created_at)}</p>
+                    <p className="text-gray-300 text-xs">{r.products?.type} {r.products?.size} × {r.quantity}</p>
+                  </div>
+                  <span className="text-green-400 text-xs font-semibold shrink-0">{(r.delivery_fee || 0).toLocaleString('lo-LA')} ₭</span>
+                </div>
+              ))}
             </div>
           </div>
         ))}
@@ -547,14 +588,15 @@ function Inner() {
       return <Empty icon="🚚" message="ຍັງບໍ່ມີປະຫວັດການກະຈາຍ" />
     }
 
-    // ── Delivery fee summary per store ──
+    // ── Delivery fee summary per store — only show stores with unpaid fees ──
+    // (fully-paid stores go to "ຄ່າສົ່ງ" archive in header)
     const feeRows = grouped
       .map(([storeName, records]) => {
         const totalFee = records.reduce((s, r) => s + (r.delivery_fee || 0), 0)
         const paidFee  = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
         return { storeName, totalFee, allPaid: totalFee > 0 && paidFee >= totalFee }
       })
-      .filter(row => row.totalFee > 0)
+      .filter(row => row.totalFee > 0 && !row.allPaid)
     const grandFee = feeRows.reduce((s, r) => s + r.totalFee, 0)
 
     return (
@@ -693,8 +735,9 @@ function Inner() {
   // ─── Archive icon button helper ────────────────────────────────────────
   function ArchBtn({ id, icon, label, count, color = 'green' }) {
     const colorMap = {
-      green: { text: 'text-green-400', bg: 'bg-green-500' },
-      blue:  { text: 'text-blue-400',  bg: 'bg-blue-500' },
+      green:  { text: 'text-green-400',       bg: 'bg-green-500' },
+      blue:   { text: 'text-blue-400',         bg: 'bg-blue-500' },
+      yellow: { text: 'text-brand-yellow',     bg: 'bg-brand-yellow' },
     }
     const c = colorMap[color] || colorMap.green
     return (
@@ -723,6 +766,7 @@ function Inner() {
           <div className="flex items-center gap-1">
             <ArchBtn id="delivered" icon={<Truck size={14} />}       label="ສົ່ງແລ້ວ" count={deliveredNotifs.length} color="green" />
             <ArchBtn id="paid"      icon={<CheckCircle size={14} />} label="ຊຳລະ"    count={paidDists.length}       color="blue"  />
+            <ArchBtn id="fees"      icon={<Package size={14} />}     label="ຄ່າສົ່ງ"  count={distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length} color="yellow" />
           </div>
         }
       />
@@ -1062,6 +1106,7 @@ function Inner() {
               <p className="text-white font-bold text-sm flex items-center gap-2">
                 {archivePanel === 'delivered' && <><Truck size={16} className="text-green-400" />ສົ່ງສຳເລັດ ({deliveredNotifs.length})</>}
                 {archivePanel === 'paid'      && <><CheckCircle size={16} className="text-blue-400" />ຊຳລະແລ້ວ ({paidDists.length})</>}
+                {archivePanel === 'fees'      && <><Package size={16} className="text-brand-yellow" />ຄ່າສົ່ງ ({distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length})</>}
               </p>
               <button
                 onClick={() => setArchivePanel(null)}
@@ -1072,6 +1117,7 @@ function Inner() {
             <div className="flex-1 overflow-y-auto px-4 py-3">
               {archivePanel === 'delivered' && renderDeliveredArchive()}
               {archivePanel === 'paid'      && renderPaidArchive()}
+              {archivePanel === 'fees'      && renderPaidFeesDistArchive()}
             </div>
           </div>
         </div>
