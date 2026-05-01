@@ -987,99 +987,159 @@ function Inner() {
   }
 
   // ─── Tab: Distribution + Orders (merged) ──────────────────────────────
-  // ─── Archive: ສົ່ງສຳເລັດ (delivered notifications) ──────────────────────
+  // ─── Archive: ຊຳລະແລ້ວ (paid distrib records + delivered notifs) ─────────
   function renderAdminDeliveredArchive() {
+    const paidDistribs    = distrib.filter(r => r.is_paid)
     const deliveredNotifs = notifications.filter(n => n.status === 'delivered')
-    if (deliveredNotifs.length === 0) return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
-    // Group by date
-    const grouped = {}
+    if (paidDistribs.length === 0 && deliveredNotifs.length === 0)
+      return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
+
+    // ── Paid distrib records grouped by date ──
+    const distGrouped = {}
+    paidDistribs.forEach(r => {
+      const dateLabel = new Date(r.created_at).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short', year: 'numeric' })
+      if (!distGrouped[dateLabel]) distGrouped[dateLabel] = []
+      distGrouped[dateLabel].push(r)
+    })
+
+    // ── Delivered notifications grouped by date ──
+    const notifGrouped = {}
     deliveredNotifs.forEach(n => {
       const d = n.acknowledged_at || n.created_at
       const dateLabel = new Date(d).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short', year: 'numeric' })
-      if (!grouped[dateLabel]) grouped[dateLabel] = []
-      grouped[dateLabel].push(n)
+      if (!notifGrouped[dateLabel]) notifGrouped[dateLabel] = []
+      notifGrouped[dateLabel].push(n)
     })
+
     return (
-      <div className="space-y-4">
-        {Object.entries(grouped).map(([dateLabel, items]) => (
-          <div key={dateLabel}>
-            <p className="text-gray-500 text-xs font-semibold mb-2 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
-              {dateLabel}
+      <div className="space-y-5">
+        {/* ── Paid distribution records ── */}
+        {paidDistribs.length > 0 && (
+          <div>
+            <p className="text-green-400 text-xs font-bold mb-3 flex items-center gap-1.5">
+              <CheckCircle size={12} /> ການກະຈາຍຊຳລະແລ້ວ ({paidDistribs.length})
             </p>
-            <div className="space-y-2">
-              {items.map(n => {
-                const distName = n.assigned_to
-                  ? (users.find(u => u.id === n.assigned_to)?.name || n.assigned_to.slice(0,6))
-                  : 'Broadcast'
-                const totalQty = Array.isArray(n.items) ? n.items.reduce((s, i) => s + (i.quantity || 0), 0) : 0
-                return (
-                  <div key={n.id} className="bg-dark-700 rounded-xl px-3 py-2.5 border border-dark-500">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-xs font-semibold truncate">{n.store_name || '—'}</p>
-                        <p className="text-gray-500 text-xs">🚚 {distName}</p>
-                        {Array.isArray(n.items) && n.items.length > 0 && (
-                          <p className="text-gray-400 text-xs mt-0.5">
-                            {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right shrink-0">
-                        <span className="text-green-400 text-xs font-bold">{totalQty} ຕຸກ</span>
-                        <p className="text-gray-600 text-[10px] mt-0.5">
-                          {n.acknowledged_at ? new Date(n.acknowledged_at).toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </p>
-                      </div>
-                    </div>
+            <div className="space-y-4">
+              {Object.entries(distGrouped).map(([dateLabel, recs]) => (
+                <div key={dateLabel}>
+                  <p className="text-gray-500 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-500 inline-block" />{dateLabel}
+                  </p>
+                  <div className="space-y-1.5">
+                    {recs.map(r => {
+                      const amt = (r.unit_price || 0) > 0 ? r.quantity * r.unit_price : 0
+                      const distUser = users.find(u => u.id === r.created_by)
+                      return (
+                        <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 border border-green-900/20 flex items-center gap-2">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-xs font-semibold truncate">{r.store_name || '—'}</p>
+                            <p className="text-gray-400 text-xs">{r.products?.type} {r.products?.size} × {r.quantity} ຕຸກ</p>
+                            {distUser && <p className="text-gray-500 text-xs">🚚 {distUser.name}</p>}
+                          </div>
+                          <div className="text-right shrink-0 flex items-center gap-2">
+                            {amt > 0 && <span className="text-green-400 text-xs font-semibold">{amt.toLocaleString('lo-LA')} ₭</span>}
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
+                              {r.payment_method === 'cash' ? '💵' : '💳'}
+                            </span>
+                          </div>
+                        </div>
+                      )
+                    })}
                   </div>
-                )
-              })}
+                </div>
+              ))}
             </div>
           </div>
-        ))}
+        )}
+
+        {/* ── Delivered notifications ── */}
+        {deliveredNotifs.length > 0 && (
+          <div>
+            <p className="text-gray-400 text-xs font-bold mb-3 flex items-center gap-1.5">
+              <Truck size={12} className="text-gray-400" /> ສົ່ງສຳເລັດ ({deliveredNotifs.length})
+            </p>
+            <div className="space-y-4">
+              {Object.entries(notifGrouped).map(([dateLabel, items]) => (
+                <div key={dateLabel}>
+                  <p className="text-gray-500 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-gray-500 inline-block" />{dateLabel}
+                  </p>
+                  <div className="space-y-1.5">
+                    {items.map(n => {
+                      const distName = n.assigned_to ? (users.find(u => u.id === n.assigned_to)?.name || n.assigned_to.slice(0,6)) : 'Broadcast'
+                      const totalQty = Array.isArray(n.items) ? n.items.reduce((s, i) => s + (i.quantity || 0), 0) : 0
+                      return (
+                        <div key={n.id} className="bg-dark-700 rounded-xl px-3 py-2.5 border border-dark-500">
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-xs font-semibold truncate">{n.store_name || '—'}</p>
+                              <p className="text-gray-500 text-xs">🚚 {distName}</p>
+                              {Array.isArray(n.items) && n.items.length > 0 && (
+                                <p className="text-gray-400 text-xs mt-0.5">{n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}</p>
+                              )}
+                            </div>
+                            <span className="text-green-400 text-xs font-bold shrink-0">{totalQty} ຕຸກ</span>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     )
   }
 
-  // ─── Archive: ຈ່າຍຄ່າສົ່ງ (paid delivery fees) ────────────────────────
+  // ─── Archive: ຈ່າຍຄ່າສົ່ງ (fully-paid delivery fee stores) ──────────────
   function renderAdminPaidFeesArchive() {
-    const paidRecords = distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0)
-    if (paidRecords.length === 0) return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
-    // Group by store
+    // Build per-store totals, show only fully-paid stores
     const byStore = {}
-    paidRecords.forEach(r => {
+    distrib.forEach(r => {
+      if (!r.delivery_fee || r.delivery_fee === 0) return
       const key = r.store_name || 'ບໍ່ລະບຸ'
-      if (!byStore[key]) byStore[key] = { records: [], total: 0 }
+      if (!byStore[key]) byStore[key] = { records: [], total: 0, paid: 0 }
       byStore[key].records.push(r)
       byStore[key].total += r.delivery_fee || 0
+      if (r.delivery_fee_paid) byStore[key].paid += r.delivery_fee || 0
     })
+    const fullyPaidStores = Object.entries(byStore).filter(([, v]) => v.total > 0 && v.paid >= v.total)
+    if (fullyPaidStores.length === 0) return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
     return (
-      <div className="space-y-4">
-        {Object.entries(byStore).map(([storeName, { records, total }]) => (
-          <div key={storeName}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-white text-xs font-semibold flex items-center gap-1.5">
-                <Store size={12} className="text-brand-yellow" /> {storeName}
-              </p>
-              <span className="text-green-400 text-xs font-bold">{total.toLocaleString('lo-LA')} ₭</span>
-            </div>
-            <div className="space-y-1.5">
-              {records.map(r => {
-                const distribUser = users.find(u => u.id === r.created_by)
-                return (
-                  <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 border border-green-900/30 flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short' })}</p>
-                      {distribUser && <p className="text-gray-500 text-xs">🚚 {distribUser.name}</p>}
+      <div className="space-y-3">
+        {fullyPaidStores.map(([storeName, { records, total }]) => {
+          // Deduplicate batches by notification_id
+          const byNotif = {}
+          records.forEach(r => {
+            const k = r.notification_id || r.id
+            if (!byNotif[k]) byNotif[k] = { id: r.id, fee: 0, date: r.created_at, distribId: r.created_by }
+            byNotif[k].fee = Math.max(byNotif[k].fee, r.delivery_fee || 0)
+          })
+          const batches = Object.values(byNotif).sort((a, b) => new Date(b.date) - new Date(a.date))
+          return (
+            <div key={storeName} className="bg-dark-700 rounded-xl p-3 border border-green-900/30">
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-white text-xs font-semibold flex items-center gap-1.5">
+                  <Store size={12} className="text-brand-yellow" /> {storeName}
+                </p>
+                <span className="text-green-400 text-xs font-bold">{total.toLocaleString('lo-LA')} ₭ ✅</span>
+              </div>
+              <div className="space-y-1">
+                {batches.map(b => {
+                  const distribUser = users.find(u => u.id === b.distribId)
+                  return (
+                    <div key={b.id} className="flex items-center justify-between text-xs text-gray-400">
+                      <span>{new Date(b.date).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short' })}{distribUser ? ` · 🚚 ${distribUser.name}` : ''}</span>
+                      <span className="text-green-400 font-semibold">{b.fee.toLocaleString('lo-LA')} ₭</span>
                     </div>
-                    <span className="text-green-400 text-xs font-semibold shrink-0">{(r.delivery_fee || 0).toLocaleString('lo-LA')} ₭ ✅</span>
-                  </div>
-                )
-              })}
+                  )
+                })}
+              </div>
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -1442,37 +1502,25 @@ function Inner() {
             )}
           </div>
 
-          {filtered.length === 0 ? (
-            <Empty icon="🚚" message={hasFilter ? 'ບໍ່ພົບລາຍການທີ່ກົງກັບ filter' : 'ຍັງບໍ່ມີການກະຈາຍ'} />
+          {unpaid.length === 0 ? (
+            <Empty icon="🚚" message={hasFilter ? 'ບໍ່ພົບລາຍການທີ່ກົງກັບ filter' : 'ຍັງບໍ່ມີການກະຈາຍທີ່ຄ້າງຊຳລະ'} />
           ) : (
             <div className="space-y-5">
-              {unpaid.length > 0 && (
-                <div>
-                  <p className="text-orange-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse inline-block" />
-                    ຍັງບໍ່ທັນຊຳລະ ({unpaid.length})
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {unpaid.map(r => <DistribCard key={r.id} r={r} />)}
-                  </div>
+              <div>
+                <p className="text-orange-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse inline-block" />
+                  ຍັງບໍ່ທັນຊຳລະ ({unpaid.length})
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+                  {unpaid.map(r => <DistribCard key={r.id} r={r} />)}
                 </div>
-              )}
-              {paid.length > 0 && (
-                <div>
-                  <p className="text-green-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
-                    <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
-                    ຊຳລະແລ້ວ ({paid.length})
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                    {paid.map(r => <DistribCard key={r.id} r={r} />)}
-                  </div>
-                </div>
-              )}
+              </div>
+              {/* ຊຳລະແລ້ວ records moved to ຊຳລະແລ້ວ archive — see header button */}
             </div>
           )}
         </div>
 
-        {/* ════ SECTION D: ຄ່າຂົນສົ່ງ ════ */}
+        {/* ════ SECTION D: ຄ່າຂົນສົ່ງ (unpaid only) ════ */}
         {(() => {
           // Group all distribution records by store, sum delivery_fee
           const feeByStore = {}
@@ -1483,9 +1531,16 @@ function Inner() {
             feeByStore[key].records.push(r)
             feeByStore[key].totalFee += r.delivery_fee || 0
           })
+          // Only show stores with at least some unpaid fees (fully-paid → archive)
           const storeEntries = Object.entries(feeByStore)
-            .sort((a, b) => b[1].totalFee - a[1].totalFee)
-          const grandTotal = storeEntries.reduce((s, [, v]) => s + v.totalFee, 0)
+            .map(([name, data]) => {
+              const paidFee   = data.records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
+              const unpaidFee = data.totalFee - paidFee
+              return [name, { ...data, paidFeeTotal: paidFee, unpaidFeeTotal: unpaidFee }]
+            })
+            .filter(([, v]) => v.unpaidFeeTotal > 0)
+            .sort((a, b) => b[1].unpaidFeeTotal - a[1].unpaidFeeTotal)
+          const grandTotal = storeEntries.reduce((s, [, v]) => s + v.unpaidFeeTotal, 0)
           if (storeEntries.length === 0) return null
           return (
             <div>
@@ -1507,9 +1562,9 @@ function Inner() {
                 </button>
               )}
               <div className="space-y-3">
-                {storeEntries.map(([storeName, { records, totalFee }]) => {
-                  const paidFee   = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
-                  const unpaidFee = totalFee - paidFee
+                {storeEntries.map(([storeName, { records, totalFee, paidFeeTotal, unpaidFeeTotal }]) => {
+                  const paidFee   = paidFeeTotal
+                  const unpaidFee = unpaidFeeTotal
                   // Deduplicate by notification_id (each delivery batch)
                   const byNotif = {}
                   records.forEach(r => {
@@ -1974,8 +2029,17 @@ function Inner() {
         title="Admin Dashboard"
         subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ"
         middleActions={(() => {
-          const deliveredCount = notifications.filter(n => n.status === 'delivered').length
-          const paidFeesCount  = distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length
+          const deliveredCount = distrib.filter(r => r.is_paid).length + notifications.filter(n => n.status === 'delivered').length
+          // Count fully-paid fee stores
+          const feeStoreMap = {}
+          distrib.forEach(r => {
+            if (!r.delivery_fee || r.delivery_fee === 0) return
+            const k = r.store_name || 'ບໍ່ລະບຸ'
+            if (!feeStoreMap[k]) feeStoreMap[k] = { total: 0, paid: 0 }
+            feeStoreMap[k].total += r.delivery_fee || 0
+            if (r.delivery_fee_paid) feeStoreMap[k].paid += r.delivery_fee || 0
+          })
+          const paidFeesCount = Object.values(feeStoreMap).filter(v => v.total > 0 && v.paid >= v.total).length
           const btnBase = 'flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-colors relative'
           return (
             <div className="flex items-center gap-1">
@@ -2089,8 +2153,8 @@ function Inner() {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-4 border-b border-dark-500 shrink-0">
               <div className="flex items-center gap-2">
-                {archivePanel === 'delivered' && <><CheckCircle size={16} className="text-green-400" /><span className="text-white font-bold text-sm">ສົ່ງສຳເລັດ ({notifications.filter(n => n.status === 'delivered').length})</span></>}
-                {archivePanel === 'fees'      && <><Truck size={16} className="text-brand-yellow" /><span className="text-white font-bold text-sm">ຈ່າຍຄ່າສົ່ງ ({distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length})</span></>}
+                {archivePanel === 'delivered' && <><CheckCircle size={16} className="text-green-400" /><span className="text-white font-bold text-sm">ຊຳລະແລ້ວ ({distrib.filter(r => r.is_paid).length + notifications.filter(n => n.status === 'delivered').length})</span></>}
+                {archivePanel === 'fees'      && <><Truck size={16} className="text-brand-yellow" /><span className="text-white font-bold text-sm">ຈ່າຍຄ່າສົ່ງ (ຄົບ)</span></>}
               </div>
               <button onClick={() => setArchivePanel(null)} className="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-dark-600">✕</button>
             </div>
