@@ -451,6 +451,7 @@ function Inner() {
         quantity:     String(i.quantity || ''),
         unit_price:   String(i.unit_price || ''),
         is_promotion: !!i.is_promotion,
+        expiry_qty:   String(i.expiry_qty || ''),
       })) : [],
     })
     setShowEditNotifForm(true)
@@ -470,6 +471,7 @@ function Inner() {
           quantity:     parseInt(i.quantity),
           unit_price:   parseFloat(i.unit_price) || 0,
           is_promotion: !!i.is_promotion,
+          expiry_qty:   parseInt(i.expiry_qty) || 0,
         })),
       }).eq('id', editNotif.id)
       if (error) throw error
@@ -626,6 +628,7 @@ function Inner() {
       quantity:     '',
       unit_price:   prices[p.id] !== undefined ? String(prices[p.id]) : '',
       is_promotion: false,
+      expiry_qty:   '',
     }))
     setNotifForm(f => ({
       ...f,
@@ -664,6 +667,7 @@ function Inner() {
           quantity:     parseInt(i.quantity),
           unit_price:   parseFloat(i.unit_price) || 0,
           is_promotion: !!i.is_promotion,
+          expiry_qty:   parseInt(i.expiry_qty) || 0,
         })),
         created_by: user.id,
         status:     'pending',
@@ -2362,31 +2366,45 @@ function Inner() {
                 <span className="text-center">Promo</span>
               </div>
               {notifForm.items.map((item, i) => (
-                <div key={i} className={`grid grid-cols-[1fr_64px_80px_auto] items-center gap-2 rounded-xl px-3 py-2 border ${item.is_promotion ? 'bg-orange-900/10 border-orange-400/30' : 'bg-dark-700 border-dark-500'}`}>
-                  <span className="text-gray-300 text-sm truncate">{item.product_name}</span>
-                  <input
-                    type="number" inputMode="numeric" min="0"
-                    value={item.quantity}
-                    onChange={e => updateNotifItem(i, 'quantity', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-brand-yellow font-bold text-sm text-right"
-                  />
-                  <input
-                    type="number" inputMode="decimal" min="0" step="100"
-                    value={item.unit_price}
-                    onChange={e => updateNotifItem(i, 'unit_price', e.target.value)}
-                    placeholder="0"
-                    className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-green-400 text-sm text-right"
-                  />
-                  <label className="flex flex-col items-center gap-0.5 cursor-pointer" title="Promotion">
+                <div key={i} className={`rounded-xl px-3 py-2 border ${item.is_promotion ? 'bg-orange-900/10 border-orange-400/30' : 'bg-dark-700 border-dark-500'}`}>
+                  {/* Main product row */}
+                  <div className="grid grid-cols-[1fr_64px_80px_auto] items-center gap-2">
+                    <span className="text-gray-300 text-sm truncate">{item.product_name}</span>
                     <input
-                      type="checkbox"
-                      checked={!!item.is_promotion}
-                      onChange={e => updateNotifItem(i, 'is_promotion', e.target.checked)}
-                      className="w-4 h-4 accent-orange-400 cursor-pointer"
+                      type="number" inputMode="numeric" min="0"
+                      value={item.quantity}
+                      onChange={e => updateNotifItem(i, 'quantity', e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-brand-yellow font-bold text-sm text-right"
                     />
-                    <span className="text-[9px] text-orange-400">🎁</span>
-                  </label>
+                    <input
+                      type="number" inputMode="decimal" min="0" step="100"
+                      value={item.unit_price}
+                      onChange={e => updateNotifItem(i, 'unit_price', e.target.value)}
+                      placeholder="0"
+                      className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-green-400 text-sm text-right"
+                    />
+                    <label className="flex flex-col items-center gap-0.5 cursor-pointer" title="Promotion">
+                      <input
+                        type="checkbox"
+                        checked={!!item.is_promotion}
+                        onChange={e => updateNotifItem(i, 'is_promotion', e.target.checked)}
+                        className="w-4 h-4 accent-orange-400 cursor-pointer"
+                      />
+                      <span className="text-[9px] text-orange-400">🎁</span>
+                    </label>
+                  </div>
+                  {/* Expiry replacement sub-row */}
+                  <div className="flex items-center gap-2 mt-1.5 pl-0.5">
+                    <span className="text-[10px] text-blue-400 flex-1">ປ່ຽນແທນໝົດອາຍຸ</span>
+                    <input
+                      type="number" inputMode="numeric" min="0"
+                      value={item.expiry_qty}
+                      onChange={e => updateNotifItem(i, 'expiry_qty', e.target.value)}
+                      placeholder="0"
+                      className="w-14 bg-dark-600 border border-blue-400/30 rounded-lg px-2 py-1 text-blue-400 text-[10px] text-right"
+                    />
+                  </div>
                 </div>
               ))}
               <p className="text-gray-600 text-xs">* ຕິກ 🎁 ສຳລັບລາຍການ Promotion</p>
@@ -2542,27 +2560,41 @@ function Inner() {
                 <span>ສິນຄ້າ</span><span className="text-right">ຈຳນວນ</span><span className="text-right">ລາຄາ ₭</span><span className="text-center">Promo</span>
               </div>
               {notifEditForm.items.map((item, i) => (
-                <div key={i} className={`grid grid-cols-[1fr_64px_80px_auto] items-center gap-2 rounded-xl px-3 py-2 border ${item.is_promotion ? 'bg-orange-900/10 border-orange-400/30' : 'bg-dark-700 border-dark-500'}`}>
-                  <span className="text-gray-300 text-sm truncate">{item.product_name}</span>
-                  <input type="number" inputMode="numeric" min="0"
-                    value={item.quantity}
-                    onChange={e => updateEditNotifItem(i, 'quantity', e.target.value)}
-                    className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-brand-yellow font-bold text-sm text-right"
-                  />
-                  <input type="number" inputMode="decimal" min="0" step="100"
-                    value={item.unit_price}
-                    onChange={e => updateEditNotifItem(i, 'unit_price', e.target.value)}
-                    className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-green-400 text-sm text-right"
-                  />
-                  <label className="flex flex-col items-center gap-0.5 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={!!item.is_promotion}
-                      onChange={e => updateEditNotifItem(i, 'is_promotion', e.target.checked)}
-                      className="w-4 h-4 accent-orange-400 cursor-pointer"
+                <div key={i} className={`rounded-xl px-3 py-2 border ${item.is_promotion ? 'bg-orange-900/10 border-orange-400/30' : 'bg-dark-700 border-dark-500'}`}>
+                  {/* Main product row */}
+                  <div className="grid grid-cols-[1fr_64px_80px_auto] items-center gap-2">
+                    <span className="text-gray-300 text-sm truncate">{item.product_name}</span>
+                    <input type="number" inputMode="numeric" min="0"
+                      value={item.quantity}
+                      onChange={e => updateEditNotifItem(i, 'quantity', e.target.value)}
+                      className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-brand-yellow font-bold text-sm text-right"
                     />
-                    <span className="text-[9px] text-orange-400">🎁</span>
-                  </label>
+                    <input type="number" inputMode="decimal" min="0" step="100"
+                      value={item.unit_price}
+                      onChange={e => updateEditNotifItem(i, 'unit_price', e.target.value)}
+                      className="w-full bg-dark-600 border border-dark-400 rounded-lg px-2 py-1.5 text-green-400 text-sm text-right"
+                    />
+                    <label className="flex flex-col items-center gap-0.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={!!item.is_promotion}
+                        onChange={e => updateEditNotifItem(i, 'is_promotion', e.target.checked)}
+                        className="w-4 h-4 accent-orange-400 cursor-pointer"
+                      />
+                      <span className="text-[9px] text-orange-400">🎁</span>
+                    </label>
+                  </div>
+                  {/* Expiry replacement sub-row */}
+                  <div className="flex items-center gap-2 mt-1.5 pl-0.5">
+                    <span className="text-[10px] text-blue-400 flex-1">ປ່ຽນແທນໝົດອາຍຸ</span>
+                    <input
+                      type="number" inputMode="numeric" min="0"
+                      value={item.expiry_qty}
+                      onChange={e => updateEditNotifItem(i, 'expiry_qty', e.target.value)}
+                      placeholder="0"
+                      className="w-14 bg-dark-600 border border-blue-400/30 rounded-lg px-2 py-1 text-blue-400 text-[10px] text-right"
+                    />
+                  </div>
                 </div>
               ))}
             </div>

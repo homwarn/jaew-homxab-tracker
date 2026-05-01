@@ -321,9 +321,11 @@ function Inner() {
     if (deliveredNotifs.length === 0)
       return <div className="flex flex-col items-center py-10 gap-2 text-gray-500"><span className="text-3xl">🚚</span><p className="text-sm">ຍັງບໍ່ມີລາຍການ</p></div>
 
+    // Group by date-only (not datetime) so same-day deliveries stay together
     const grouped = {}
     deliveredNotifs.forEach(n => {
-      const key = fmtDate(n.created_at)
+      const key = new Date(n.acknowledged_at || n.created_at)
+        .toLocaleDateString('lo-LA', { day: '2-digit', month: '2-digit', year: 'numeric' })
       if (!grouped[key]) grouped[key] = []
       grouped[key].push(n)
     })
