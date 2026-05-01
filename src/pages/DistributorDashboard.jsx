@@ -417,43 +417,108 @@ function Inner() {
     )
   }
 
-  // ─── Archive: paid delivery fees ──────────────────────────────────────
+  // ─── Archive: ຄ່າສົ່ງ (fee per invoice, split unpaid/paid) ───────────────
   function renderPaidFeesDistArchive() {
-    const paidFeeRecs = distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0)
-    if (paidFeeRecs.length === 0)
+    // Build per-store → per-invoice (notification_id) fee map
+    const byStore = {}
+    distributions.forEach(r => {
+      if (!r.delivery_fee || r.delivery_fee === 0) return
+      const store = r.store_name || 'ບໍ່ລະບຸ'
+      const key   = r.notification_id || r.id
+      if (!byStore[store]) byStore[store] = {}
+      if (!byStore[store][key]) {
+        byStore[store][key] = { id: r.id, notifId: key, fee: 0, paid: r.delivery_fee_paid, date: r.created_at }
+      }
+      byStore[store][key].fee  = Math.max(byStore[store][key].fee, r.delivery_fee || 0)
+      if (r.delivery_fee_paid) byStore[store][key].paid = true
+    })
+
+    const storeList = Object.entries(byStore)
+    if (storeList.length === 0)
       return <div className="flex flex-col items-center py-10 gap-2 text-gray-500"><span className="text-3xl">🚚</span><p className="text-sm">ຍັງບໍ່ມີລາຍການ</p></div>
 
-    // Group by store
-    const byStore = {}
-    paidFeeRecs.forEach(r => {
-      const key = r.store_name || 'ບໍ່ລະບຸ'
-      if (!byStore[key]) byStore[key] = { records: [], total: 0 }
-      byStore[key].records.push(r)
-      byStore[key].total += r.delivery_fee || 0
-    })
+    // Global totals
+    let grandUnpaid = 0, grandPaid = 0
+    storeList.forEach(([, inv]) => Object.values(inv).forEach(b => {
+      if (b.paid) grandPaid += b.fee; else grandUnpaid += b.fee
+    }))
+
     return (
-      <div className="space-y-4">
-        {Object.entries(byStore).map(([storeName, { records, total }]) => (
-          <div key={storeName}>
-            <div className="flex items-center justify-between mb-2">
-              <p className="text-white text-xs font-semibold flex items-center gap-1.5">
-                <Store size={12} className="text-brand-yellow" /> {storeName}
-              </p>
-              <span className="text-green-400 text-xs font-bold">{total.toLocaleString('lo-LA')} ₭ ✅</span>
-            </div>
-            <div className="space-y-1.5">
-              {records.map(r => (
-                <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 border border-green-900/30 flex items-center justify-between gap-2">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-400 text-xs">{fmtDate(r.created_at)}</p>
-                    <p className="text-gray-300 text-xs">{r.products?.type} {r.products?.size} × {r.quantity}</p>
-                  </div>
-                  <span className="text-green-400 text-xs font-semibold shrink-0">{(r.delivery_fee || 0).toLocaleString('lo-LA')} ₭</span>
+      <div className="space-y-1">
+        {/* Grand total strip */}
+        <div className="flex items-center justify-between px-1 pb-3 border-b border-dark-500 mb-3">
+          <span className="text-orange-400 text-xs font-semibold">⏳ ຄ້າງ: {grandUnpaid.toLocaleString('lo-LA')} ₭</span>
+          <span className="text-green-400 text-xs font-semibold">✅ ຈ່າຍ: {grandPaid.toLocaleString('lo-LA')} ₭</span>
+        </div>
+
+        {/* Pay-all button if any unpaid */}
+        {grandUnpaid > 0 && (
+          <button
+            onClick={markAllFeesPaid}
+            className="w-full py-2 rounded-xl bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/30 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-brand-yellow/20 transition-colors mb-3"
+          >
+            💰 ຈ່າຍຄ່າຂົນສົ່ງທັງໝົດ
+          </button>
+        )}
+
+        {storeList.map(([storeName, invoices]) => {
+          const invoiceList = Object.values(invoices).sort((a, b) => new Date(b.date) - new Date(a.date))
+          const unpaidInv   = invoiceList.filter(b => !b.paid)
+          const paidInv     = invoiceList.filter(b =>  b.paid)
+          const storeUnpaid = unpaidInv.reduce((s, b) => s + b.fee, 0)
+          const storePaid   = paidInv.reduce((s, b) => s + b.fee, 0)
+
+          return (
+            <div key={storeName} className="bg-dark-700/50 rounded-2xl p-3 border border-dark-500 space-y-3">
+              {/* Store title */}
+              <div className="flex items-center justify-between">
+                <p className="text-white text-sm font-bold flex items-center gap-1.5">
+                  <Store size={13} className="text-brand-yellow" /> {storeName}
+                </p>
+                <div className="flex items-center gap-2 text-xs">
+                  {storeUnpaid > 0 && <span className="text-orange-400 font-semibold">⏳ {storeUnpaid.toLocaleString('lo-LA')} ₭</span>}
+                  {storePaid   > 0 && <span className="text-green-400 font-semibold">✅ {storePaid.toLocaleString('lo-LA')} ₭</span>}
                 </div>
-              ))}
+              </div>
+
+              {/* Section 1: Unpaid invoices */}
+              {unpaidInv.length > 0 && (
+                <div>
+                  <p className="text-orange-400 text-[10px] font-bold uppercase tracking-wide mb-1.5">ຄ້າງຈ່າຍ ({unpaidInv.length})</p>
+                  <div className="space-y-1.5">
+                    {unpaidInv.map(b => (
+                      <div key={b.notifId} className="flex items-center justify-between bg-dark-600 rounded-xl px-3 py-2 border border-orange-900/20">
+                        <p className="text-gray-400 text-xs">{fmtDate(b.date)}</p>
+                        <span className="text-white text-xs font-semibold">{b.fee.toLocaleString('lo-LA')} ₭</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-end pt-0.5">
+                      <span className="text-orange-400 text-xs font-bold">ລວມ: {storeUnpaid.toLocaleString('lo-LA')} ₭</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Section 2: Paid invoices */}
+              {paidInv.length > 0 && (
+                <div>
+                  <p className="text-green-400 text-[10px] font-bold uppercase tracking-wide mb-1.5">ຈ່າຍແລ້ວ ({paidInv.length})</p>
+                  <div className="space-y-1.5">
+                    {paidInv.map(b => (
+                      <div key={b.notifId} className="flex items-center justify-between bg-dark-600 rounded-xl px-3 py-2 border border-green-900/20">
+                        <p className="text-gray-400 text-xs">{fmtDate(b.date)}</p>
+                        <span className="text-green-400 text-xs font-semibold">{b.fee.toLocaleString('lo-LA')} ₭ ✅</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-end pt-0.5">
+                      <span className="text-green-400 text-xs font-bold">ລວມ: {storePaid.toLocaleString('lo-LA')} ₭</span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     )
   }
@@ -581,76 +646,18 @@ function Inner() {
     )
   }
 
-  // ─── Tab: History ──────────────────────────────────────────────────────
+  // ─── Tab: ຄ້າງຊຳລະ ────────────────────────────────────────────────────
   function renderHistory() {
-    const grouped = getGroupedHistory()
+    const grouped = getGroupedHistory()  // only is_paid=false records, grouped by store
     if (grouped.length === 0) {
-      return <Empty icon="🚚" message="ຍັງບໍ່ມີປະຫວັດການກະຈາຍ" />
+      return <Empty icon="✅" message="ບໍ່ມີລາຍການຄ້າງຊຳລະ" />
     }
-
-    // ── Delivery fee summary per store — only show stores with unpaid fees ──
-    // (fully-paid stores go to "ຄ່າສົ່ງ" archive in header)
-    const feeRows = grouped
-      .map(([storeName, records]) => {
-        const totalFee = records.reduce((s, r) => s + (r.delivery_fee || 0), 0)
-        const paidFee  = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
-        return { storeName, totalFee, allPaid: totalFee > 0 && paidFee >= totalFee }
-      })
-      .filter(row => row.totalFee > 0 && !row.allPaid)
-    const grandFee = feeRows.reduce((s, r) => s + r.totalFee, 0)
 
     return (
       <div className="space-y-6">
-
-        {/* ── Delivery fee summary card ── */}
-        {feeRows.length > 0 && (
-          <div className="card border-brand-yellow/20 bg-dark-800/60">
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-brand-yellow font-bold text-sm flex items-center gap-2">
-                🚚 ສະຫຼຸບຄ່າຂົນສົ່ງ
-              </p>
-              {grandFee > 0 && (
-                <span className="text-brand-yellow font-bold text-sm">
-                  ລວມ: {grandFee.toLocaleString('lo-LA')} ₭
-                </span>
-              )}
-            </div>
-            {feeRows.some(r => !r.allPaid) && (
-              <button
-                onClick={markAllFeesPaid}
-                className="w-full py-2 rounded-xl bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/30 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-brand-yellow/20 transition-colors mb-3"
-              >
-                💰 ຈ່າຍຄ່າຂົນສົ່ງທັງໝົດ
-              </button>
-            )}
-            <div className="space-y-2">
-              {feeRows.map(row => (
-                <div key={row.storeName} className="flex items-center justify-between py-1.5 border-b border-dark-500 last:border-0">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Store size={13} className="text-gray-400 shrink-0" />
-                    <span className="text-gray-300 text-sm truncate">{row.storeName}</span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-white font-semibold text-sm">{row.totalFee.toLocaleString('lo-LA')} ₭</span>
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
-                      row.allPaid
-                        ? 'bg-green-900/40 text-green-400 border border-green-700/40'
-                        : 'bg-orange-900/40 text-orange-400 border border-orange-700/40'
-                    }`}>
-                      {row.allPaid ? '✅ ຈ່າຍແລ້ວ' : '⏳ ຄ້າງ'}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
         {grouped.map(([storeName, records]) => {
-          const totalQty    = records.reduce((s, r) => s + r.quantity, 0)
           const totalAmount = records.reduce((s, r) => s + r.quantity * (r.unit_price || 0), 0)
-          const paidQty     = records.filter(r => r.is_paid).reduce((s, r) => s + r.quantity, 0)
-          const unpaidQty   = totalQty - paidQty
+          const totalQty    = records.reduce((s, r) => s + r.quantity, 0)
 
           return (
             <div key={storeName}>
@@ -661,69 +668,49 @@ function Inner() {
                   {storeName}
                 </p>
                 <div className="text-right">
-                  <span className="text-brand-yellow text-sm font-bold">{totalQty.toLocaleString()} ຕຸກ</span>
+                  <span className="text-orange-400 text-xs font-semibold">⏳ ຄ້າງ {totalQty.toLocaleString()} ຕຸກ</span>
                   {totalAmount > 0 && (
-                    <p className="text-green-400 text-xs">{totalAmount.toLocaleString('lo-LA')} ₭</p>
+                    <p className="text-brand-yellow text-sm font-bold">{totalAmount.toLocaleString('lo-LA')} ₭</p>
                   )}
                 </div>
               </div>
 
-              {/* Paid summary pills */}
-              <div className="flex gap-2 mb-2 px-1">
-                {paidQty > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400">
-                    ✅ ຊຳລະ {paidQty} ຕຸກ
-                  </span>
-                )}
-                {unpaidQty > 0 && (
-                  <span className="text-xs px-2 py-0.5 rounded-full bg-orange-900/30 text-orange-400">
-                    ⏳ ຄ້າງ {unpaidQty} ຕຸກ
-                  </span>
-                )}
-              </div>
-
-              {/* Records */}
+              {/* Records — each card = one invoice row */}
               <div className="space-y-2">
-                {records.map(r => (
-                  <button
-                    key={r.id}
-                    onClick={() => openDetail(r)}
-                    className="card w-full text-left hover:border-brand-yellow/40 transition-colors"
-                  >
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-white text-sm">{r.products?.type} {r.products?.size}</p>
-                        <p className="text-gray-500 text-xs">{fmtDate(r.created_at)}</p>
-                        {(r.bill_image_url || r.slip_image_url || r.delivery_image_url) && (
-                          <p className="text-brand-yellow text-xs flex items-center gap-1 mt-0.5">
-                            <Image size={10} />ມີຮູບ
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <div className="text-right">
-                          <p className="text-brand-yellow font-bold">{r.quantity.toLocaleString()}</p>
-                          {r.unit_price > 0 && (
-                            <p className="text-green-400 text-xs">{(r.quantity * r.unit_price).toLocaleString('lo-LA')} ₭</p>
+                {records.map(r => {
+                  const invoiceAmt = r.quantity * (r.unit_price || 0)
+                  return (
+                    <button
+                      key={r.id}
+                      onClick={() => openDetail(r)}
+                      className="card w-full text-left hover:border-orange-400/30 transition-colors border-orange-900/20"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-white text-sm">{r.products?.type} {r.products?.size}</p>
+                          <p className="text-gray-500 text-xs">{fmtDate(r.created_at)}</p>
+                          {(r.bill_image_url || r.slip_image_url) && (
+                            <p className="text-brand-yellow text-xs flex items-center gap-1 mt-0.5"><Image size={10} />ມີຮູບ</p>
                           )}
-                          <div className="flex items-center gap-1 justify-end mt-0.5">
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
+                        </div>
+                        <div className="text-right shrink-0 flex items-center gap-2">
+                          <div>
+                            <p className="text-brand-yellow font-bold">{r.quantity.toLocaleString()} ຕຸກ</p>
+                            {invoiceAmt > 0 && (
+                              <p className="text-white text-xs font-semibold">{invoiceAmt.toLocaleString('lo-LA')} ₭</p>
+                            )}
+                            <span className={`text-xs px-1.5 py-0.5 rounded-full inline-block mt-0.5 ${
                               r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'
                             }`}>
-                              {r.payment_method === 'cash' ? '💵' : '💳'}
-                            </span>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full ${
-                              r.is_paid ? 'bg-green-900/30 text-green-400' : 'bg-dark-700 text-gray-500'
-                            }`}>
-                              {r.is_paid ? '✅' : '⏳'}
+                              {r.payment_method === 'cash' ? '💵 ສົດ' : '💳 ໂອນ'}
                             </span>
                           </div>
+                          <ChevronRight size={14} className="text-gray-500" />
                         </div>
-                        <ChevronRight size={14} className="text-gray-500" />
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  )
+                })}
               </div>
             </div>
           )
@@ -766,7 +753,7 @@ function Inner() {
           <div className="flex items-center gap-1">
             <ArchBtn id="delivered" icon={<Truck size={14} />}       label="ສົ່ງແລ້ວ" count={deliveredNotifs.length} color="green" />
             <ArchBtn id="paid"      icon={<CheckCircle size={14} />} label="ຊຳລະ"    count={paidDists.length}       color="blue"  />
-            <ArchBtn id="fees"      icon={<Package size={14} />}     label="ຄ່າສົ່ງ"  count={distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length} color="yellow" />
+            <ArchBtn id="fees"      icon={<Package size={14} />}     label="ຄ່າສົ່ງ"  count={new Set(distributions.filter(r => (r.delivery_fee||0) > 0 && !r.delivery_fee_paid).map(r => r.notification_id || r.id)).size} color="yellow" />
           </div>
         }
       />
@@ -775,8 +762,8 @@ function Inner() {
       <div className="sticky top-[61px] z-30 bg-dark-800 border-b border-dark-500">
         <div className="flex">
           {[
-            { id: 'orders',  label: 'ຄຳສັ່ງ',  icon: Bell  },
-            { id: 'history', label: 'ປະຫວັດ', icon: Clock },
+            { id: 'orders',  label: 'ຄຳສັ່ງ',   icon: Bell  },
+            { id: 'history', label: 'ຄ້າງຊຳລະ', icon: Clock },
           ].map(t => {
             const Icon   = t.icon
             const active = tab === t.id
@@ -1024,24 +1011,38 @@ function Inner() {
               ) : null
             })()}
 
-            {/* Delivery fee — persists via localStorage */}
-            <div>
-              <label className="field-label flex items-center gap-1.5">🚚 ຄ່າສົ່ງ (₭) <span className="text-gray-500 font-normal text-xs">— ຈຳຄ່າຕາມຮ້ານ, ແກ້ໄຂໄດ້</span></label>
-              <input
-                type="number"
-                inputMode="numeric"
-                min="0"
-                value={deliveryFee}
-                onChange={e => setDeliveryFee(e.target.value)}
-                placeholder="0"
-                className="input-field"
-              />
-              {deliveryFee && parseFloat(deliveryFee) > 0 && (
-                <p className="text-gray-400 text-xs mt-1 text-right">
-                  ຄ່າສົ່ງ: {parseFloat(deliveryFee).toLocaleString('lo-LA')} ₭
-                </p>
-              )}
-            </div>
+            {/* Delivery fee — locked if admin confirmed payment */}
+            {(() => {
+              const feeLocked = activeNotif && distributions.some(
+                r => r.notification_id === activeNotif.id && r.delivery_fee_paid
+              )
+              return (
+                <div>
+                  <label className="field-label flex items-center gap-1.5">
+                    🚚 ຄ່າສົ່ງ (₭)
+                    {feeLocked
+                      ? <span className="text-green-400 font-semibold text-xs">🔒 Admin ຢືນຢັນຈ່າຍແລ້ວ — ແກ້ໄຂບໍ່ໄດ້</span>
+                      : <span className="text-gray-500 font-normal text-xs">— ຈຳຄ່າຕາມຮ້ານ, ແກ້ໄຂໄດ້</span>
+                    }
+                  </label>
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={deliveryFee}
+                    onChange={e => !feeLocked && setDeliveryFee(e.target.value)}
+                    readOnly={feeLocked}
+                    placeholder="0"
+                    className={`input-field ${feeLocked ? 'opacity-60 cursor-not-allowed bg-dark-700' : ''}`}
+                  />
+                  {deliveryFee && parseFloat(deliveryFee) > 0 && (
+                    <p className="text-gray-400 text-xs mt-1 text-right">
+                      ຄ່າສົ່ງ: {parseFloat(deliveryFee).toLocaleString('lo-LA')} ₭
+                    </p>
+                  )}
+                </div>
+              )
+            })()}
 
             {/* ── QR payment (moved here — bottom) ── */}
             <div className="bg-dark-700/60 rounded-2xl p-3">
@@ -1106,7 +1107,7 @@ function Inner() {
               <p className="text-white font-bold text-sm flex items-center gap-2">
                 {archivePanel === 'delivered' && <><Truck size={16} className="text-green-400" />ສົ່ງສຳເລັດ ({deliveredNotifs.length})</>}
                 {archivePanel === 'paid'      && <><CheckCircle size={16} className="text-blue-400" />ຊຳລະແລ້ວ ({paidDists.length})</>}
-                {archivePanel === 'fees'      && <><Package size={16} className="text-brand-yellow" />ຄ່າສົ່ງ ({distributions.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length})</>}
+                {archivePanel === 'fees'      && <><Package size={16} className="text-brand-yellow" />ຄ່າຂົນສົ່ງ</>}
               </p>
               <button
                 onClick={() => setArchivePanel(null)}
