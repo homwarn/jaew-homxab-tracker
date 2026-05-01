@@ -3,21 +3,26 @@ import { LogOut, Sun, Moon } from 'lucide-react'
 import logoImg from '../assets/logo.png'
 
 // ─── Top Header ───────────────────────────────────────────────────────────
-export function Header({ title, subtitle }) {
+export function Header({ title, subtitle, middleActions }) {
   const { profile, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
 
   return (
     <header className="sticky top-0 z-40 bg-dark-900/95 backdrop-blur-sm border-b border-dark-500 px-4 md:px-6 py-3 safe-top">
-      <div className="flex items-center justify-between max-w-screen-2xl mx-auto">
-        <div className="flex items-center gap-3">
+      <div className="flex items-center justify-between max-w-screen-2xl mx-auto gap-2">
+        <div className="flex items-center gap-3 shrink-0">
           <img src={logoImg} alt="Logo" className="h-9 w-9 rounded-xl object-cover" />
           <div>
             <h1 className="text-brand-yellow font-bold text-base leading-none">{title}</h1>
             {subtitle && <p className="text-gray-400 text-xs mt-0.5">{subtitle}</p>}
           </div>
         </div>
-        <div className="flex items-center gap-2 md:gap-3">
+        {middleActions && (
+          <div className="flex items-center gap-1 flex-1 justify-center overflow-x-auto px-1">
+            {middleActions}
+          </div>
+        )}
+        <div className="flex items-center gap-2 md:gap-3 shrink-0">
           <div className="text-right hidden sm:block">
             <p className="text-white text-xs md:text-sm font-medium leading-none">{profile?.name}</p>
             <p className="text-gray-500 text-xs mt-0.5">{ROLE_LABELS[profile?.role]}</p>

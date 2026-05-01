@@ -55,6 +55,7 @@ function Inner() {
   const [saving, setSaving]                     = useState(false)
   const [deliveryFee, setDeliveryFee]           = useState('')
   const [prevBillAmount, setPrevBillAmount]     = useState('')
+  const [archivePanel, setArchivePanel]         = useState(null) // null | 'delivered' | 'paid'
 
   // ── Detail modal (history) ───────────────────────────────────────────────
   const [detail, setDetail]         = useState(null)
@@ -281,6 +282,7 @@ function Inner() {
   const ackedNotifs     = notifications.filter(n => n.status === 'acknowledged')
   const deliveredNotifs = notifications.filter(n => n.status === 'delivered')
   const pendingCount    = pendingNotifs.length + ackedNotifs.length
+  const paidDists       = distributions.filter(r => r.is_paid)
 
   // Group distributions by store
   function getGroupedHistory() {
@@ -295,6 +297,124 @@ function Inner() {
       const bMax = Math.max(...b[1].map(r => new Date(r.created_at).getTime()))
       return bMax - aMax
     })
+  }
+
+  // ─── Mark all delivery fees paid ──────────────────────────────────────
+  async function markAllFeesPaid() {
+    const unpaidIds = distributions
+      .filter(r => (r.delivery_fee || 0) > 0 && !r.delivery_fee_paid)
+      .map(r => r.id)
+    if (!unpaidIds.length) { toast.success('ຄ່າສົ່ງທັງໝົດຈ່າຍແລ້ວ ✅'); return }
+    try {
+      const { error } = await supabase
+        .from('distribution')
+        .update({ delivery_fee_paid: true })
+        .in('id', unpaidIds)
+      if (error) throw error
+      toast.success(`ຈ່າຍຄ່າສົ່ງ ${unpaidIds.length} ລາຍການ ✅`)
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── Archive: delivered notifications ─────────────────────────────────
+  function renderDeliveredArchive() {
+    if (deliveredNotifs.length === 0)
+      return <div className="flex flex-col items-center py-10 gap-2 text-gray-500"><span className="text-3xl">🚚</span><p className="text-sm">ຍັງບໍ່ມີລາຍການ</p></div>
+
+    const grouped = {}
+    deliveredNotifs.forEach(n => {
+      const key = fmtDate(n.created_at)
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(n)
+    })
+
+    return (
+      <div className="space-y-4">
+        {Object.entries(grouped).map(([dateLabel, items]) => (
+          <div key={dateLabel}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-px flex-1 bg-dark-600" />
+              <span className="text-gray-500 text-xs px-2">📅 {dateLabel}</span>
+              <div className="h-px flex-1 bg-dark-600" />
+            </div>
+            <div className="space-y-1.5">
+              {items.map(n => {
+                const nitems = Array.isArray(n.items) ? n.items : []
+                return (
+                  <div key={n.id} className="bg-dark-700 rounded-xl px-3 py-2.5 flex items-start gap-2 border border-dark-500">
+                    <CheckCircle size={13} className="text-green-400 mt-0.5 shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-200 text-sm font-semibold truncate">{n.store_name || '—'}</p>
+                      {nitems.length > 0 && (
+                        <p className="text-gray-400 text-xs mt-0.5 leading-snug">
+                          {nitems.map(i => `${i.product_name} ×${i.quantity}`).join(' · ')}
+                        </p>
+                      )}
+                      <p className="text-gray-600 text-[10px] mt-0.5">{fmtDate(n.created_at)}</p>
+                    </div>
+                    {n.store_maps_url && (
+                      <a href={n.store_maps_url} target="_blank" rel="noopener noreferrer"
+                        className="shrink-0 flex flex-col items-center gap-0.5 bg-blue-900/30 border border-blue-500/40 rounded-lg px-2 py-1.5 hover:bg-blue-900/50 transition-colors">
+                        <MapPin size={12} className="text-blue-400" />
+                        <span className="text-blue-400 text-[8px] font-semibold">Maps</span>
+                      </a>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ─── Archive: paid distribution records ────────────────────────────────
+  function renderPaidArchive() {
+    if (paidDists.length === 0)
+      return <div className="flex flex-col items-center py-10 gap-2 text-gray-500"><span className="text-3xl">✅</span><p className="text-sm">ຍັງບໍ່ມີລາຍການ</p></div>
+
+    const grouped = {}
+    paidDists.forEach(r => {
+      const key = fmtDate(r.created_at)
+      if (!grouped[key]) grouped[key] = []
+      grouped[key].push(r)
+    })
+
+    return (
+      <div className="space-y-4">
+        {Object.entries(grouped).map(([dateLabel, recs]) => (
+          <div key={dateLabel}>
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-px flex-1 bg-dark-600" />
+              <span className="text-gray-500 text-xs px-2">📅 {dateLabel}</span>
+              <div className="h-px flex-1 bg-dark-600" />
+            </div>
+            <div className="space-y-1.5">
+              {recs.map(r => {
+                const amt = r.unit_price > 0 ? r.quantity * r.unit_price : 0
+                return (
+                  <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 flex items-center gap-2 border border-dark-500">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-200 text-sm font-semibold truncate">{r.store_name || '—'}</p>
+                      <p className="text-gray-400 text-xs">{r.products?.type} {r.products?.size} × {r.quantity} ຕຸກ</p>
+                    </div>
+                    <div className="text-right shrink-0 flex items-center gap-2">
+                      {amt > 0 && (
+                        <p className="text-green-400 text-xs font-semibold">{amt.toLocaleString('lo-LA')} ₭</p>
+                      )}
+                      <span className={`text-xs px-1.5 py-0.5 rounded-full ${r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
+                        {r.payment_method === 'cash' ? '💵' : '💳'}
+                      </span>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
   }
 
   // ─── Notification card ─────────────────────────────────────────────────
@@ -415,31 +535,7 @@ function Inner() {
           </div>
         )}
 
-        {/* Delivered — recent */}
-        {deliveredNotifs.length > 0 && (
-          <div>
-            <p className="text-green-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-green-400 inline-block" />
-              ສົ່ງສຳເລັດແລ້ວ ({deliveredNotifs.length})
-            </p>
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-              {deliveredNotifs.slice(0, 8).map(n => (
-                <div key={n.id} className="card opacity-60">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle size={14} className="text-green-400 shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-gray-300 text-sm truncate">{n.store_name || n.message || 'ສົ່ງແລ້ວ'}</p>
-                      <p className="text-gray-500 text-xs">{fmtDate(n.created_at)}</p>
-                    </div>
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/30 text-green-400 shrink-0">
-                      ສົ່ງແລ້ວ
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Delivered — moved to "ສົ່ງແລ້ວ" archive button in header */}
       </div>
     )
   }
@@ -477,6 +573,14 @@ function Inner() {
                 </span>
               )}
             </div>
+            {feeRows.some(r => !r.allPaid) && (
+              <button
+                onClick={markAllFeesPaid}
+                className="w-full py-2 rounded-xl bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/30 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-brand-yellow/20 transition-colors mb-3"
+              >
+                💰 ຈ່າຍຄ່າຂົນສົ່ງທັງໝົດ
+              </button>
+            )}
             <div className="space-y-2">
               {feeRows.map(row => (
                 <div key={row.storeName} className="flex items-center justify-between py-1.5 border-b border-dark-500 last:border-0">
@@ -586,10 +690,42 @@ function Inner() {
     )
   }
 
+  // ─── Archive icon button helper ────────────────────────────────────────
+  function ArchBtn({ id, icon, label, count, color = 'green' }) {
+    const colorMap = {
+      green: { text: 'text-green-400', bg: 'bg-green-500' },
+      blue:  { text: 'text-blue-400',  bg: 'bg-blue-500' },
+    }
+    const c = colorMap[color] || colorMap.green
+    return (
+      <button
+        onClick={() => setArchivePanel(id)}
+        className={`relative flex flex-col items-center gap-0 rounded-xl px-2.5 py-1.5 hover:bg-dark-700 transition-colors ${c.text}`}
+      >
+        {icon}
+        <span className="text-[9px] font-semibold mt-0.5">{label}</span>
+        {count > 0 && (
+          <span className={`absolute -top-0.5 -right-0.5 ${c.bg} text-white text-[8px] rounded-full min-w-[14px] h-[14px] flex items-center justify-center font-bold px-0.5`}>
+            {count > 9 ? '9+' : count}
+          </span>
+        )}
+      </button>
+    )
+  }
+
   // ─── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-900">
-      <Header title="ຜູ້ກະຈາຍ" subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ" />
+      <Header
+        title="ຜູ້ກະຈາຍ"
+        subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ"
+        middleActions={
+          <div className="flex items-center gap-1">
+            <ArchBtn id="delivered" icon={<Truck size={14} />}       label="ສົ່ງແລ້ວ" count={deliveredNotifs.length} color="green" />
+            <ArchBtn id="paid"      icon={<CheckCircle size={14} />} label="ຊຳລະ"    count={paidDists.length}       color="blue"  />
+          </div>
+        }
+      />
 
       {/* ── Tab Bar ── */}
       <div className="sticky top-[61px] z-30 bg-dark-800 border-b border-dark-500">
@@ -910,6 +1046,36 @@ function Inner() {
           </form>
         )}
       </Modal>
+
+      {/* ── Archive Drawer ──────────────────────────────────────────────── */}
+      {archivePanel && (
+        <div className="fixed inset-0 z-50" onClick={() => setArchivePanel(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          {/* Slide-up on mobile, right drawer on desktop */}
+          <div
+            className="absolute inset-x-0 bottom-0 md:inset-y-0 md:right-0 md:left-auto md:w-[400px] bg-dark-800 rounded-t-3xl md:rounded-none flex flex-col border-t border-dark-500 md:border-t-0 md:border-l"
+            style={{ maxHeight: '85vh', ...(window.innerWidth >= 768 ? { maxHeight: '100vh' } : {}) }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drawer header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dark-500 shrink-0">
+              <p className="text-white font-bold text-sm flex items-center gap-2">
+                {archivePanel === 'delivered' && <><Truck size={16} className="text-green-400" />ສົ່ງສຳເລັດ ({deliveredNotifs.length})</>}
+                {archivePanel === 'paid'      && <><CheckCircle size={16} className="text-blue-400" />ຊຳລະແລ້ວ ({paidDists.length})</>}
+              </p>
+              <button
+                onClick={() => setArchivePanel(null)}
+                className="text-gray-400 hover:text-white p-1.5 rounded-lg hover:bg-dark-600 transition-colors"
+              >✕</button>
+            </div>
+            {/* Drawer content */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {archivePanel === 'delivered' && renderDeliveredArchive()}
+              {archivePanel === 'paid'      && renderPaidArchive()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Detail Modal (history) ──────────────────────────────────────── */}
       <Modal

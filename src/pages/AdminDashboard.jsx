@@ -93,6 +93,9 @@ function Inner() {
   // Single-record delete confirm
   const [deleteSingleDistrib, setDeleteSingleDistrib] = useState(null)
 
+  // Archive panel: null | 'delivered' | 'fees'
+  const [archivePanel, setArchivePanel] = useState(null)
+
   // Notification edit + cancel
   const [editNotif, setEditNotif]                 = useState(null)
   const [showEditNotifForm, setShowEditNotifForm] = useState(false)
@@ -305,6 +308,23 @@ function Inner() {
     try {
       const { error } = await supabase.from(tableMap[type]).update({ is_paid: !currentValue }).eq('id', id)
       if (error) throw error
+      load()
+    } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── Mark ALL delivery fees paid (admin) ─────────────────────────────
+  async function markAllDeliveryFeesPaidAdmin() {
+    const unpaidIds = distrib
+      .filter(r => (r.delivery_fee || 0) > 0 && !r.delivery_fee_paid)
+      .map(r => r.id)
+    if (!unpaidIds.length) { toast.success('ຄ່າສົ່ງທັງໝົດຈ່າຍແລ້ວ ✅'); return }
+    try {
+      const { error } = await supabase
+        .from('distribution')
+        .update({ delivery_fee_paid: true })
+        .in('id', unpaidIds)
+      if (error) throw error
+      toast.success(`ຈ່າຍຄ່າສົ່ງ ${unpaidIds.length} ລາຍການ ✅`)
       load()
     } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
   }
@@ -967,6 +987,103 @@ function Inner() {
   }
 
   // ─── Tab: Distribution + Orders (merged) ──────────────────────────────
+  // ─── Archive: ສົ່ງສຳເລັດ (delivered notifications) ──────────────────────
+  function renderAdminDeliveredArchive() {
+    const deliveredNotifs = notifications.filter(n => n.status === 'delivered')
+    if (deliveredNotifs.length === 0) return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
+    // Group by date
+    const grouped = {}
+    deliveredNotifs.forEach(n => {
+      const d = n.acknowledged_at || n.created_at
+      const dateLabel = new Date(d).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short', year: 'numeric' })
+      if (!grouped[dateLabel]) grouped[dateLabel] = []
+      grouped[dateLabel].push(n)
+    })
+    return (
+      <div className="space-y-4">
+        {Object.entries(grouped).map(([dateLabel, items]) => (
+          <div key={dateLabel}>
+            <p className="text-gray-500 text-xs font-semibold mb-2 flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-gray-400 inline-block" />
+              {dateLabel}
+            </p>
+            <div className="space-y-2">
+              {items.map(n => {
+                const distName = n.assigned_to
+                  ? (users.find(u => u.id === n.assigned_to)?.name || n.assigned_to.slice(0,6))
+                  : 'Broadcast'
+                const totalQty = Array.isArray(n.items) ? n.items.reduce((s, i) => s + (i.quantity || 0), 0) : 0
+                return (
+                  <div key={n.id} className="bg-dark-700 rounded-xl px-3 py-2.5 border border-dark-500">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white text-xs font-semibold truncate">{n.store_name || '—'}</p>
+                        <p className="text-gray-500 text-xs">🚚 {distName}</p>
+                        {Array.isArray(n.items) && n.items.length > 0 && (
+                          <p className="text-gray-400 text-xs mt-0.5">
+                            {n.items.map(i => `${i.product_name} ×${i.quantity}`).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <div className="text-right shrink-0">
+                        <span className="text-green-400 text-xs font-bold">{totalQty} ຕຸກ</span>
+                        <p className="text-gray-600 text-[10px] mt-0.5">
+                          {n.acknowledged_at ? new Date(n.acknowledged_at).toLocaleTimeString('lo-LA', { hour: '2-digit', minute: '2-digit' }) : ''}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ─── Archive: ຈ່າຍຄ່າສົ່ງ (paid delivery fees) ────────────────────────
+  function renderAdminPaidFeesArchive() {
+    const paidRecords = distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0)
+    if (paidRecords.length === 0) return <p className="text-gray-500 text-sm text-center py-8">ຍັງບໍ່ມີລາຍການ</p>
+    // Group by store
+    const byStore = {}
+    paidRecords.forEach(r => {
+      const key = r.store_name || 'ບໍ່ລະບຸ'
+      if (!byStore[key]) byStore[key] = { records: [], total: 0 }
+      byStore[key].records.push(r)
+      byStore[key].total += r.delivery_fee || 0
+    })
+    return (
+      <div className="space-y-4">
+        {Object.entries(byStore).map(([storeName, { records, total }]) => (
+          <div key={storeName}>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-white text-xs font-semibold flex items-center gap-1.5">
+                <Store size={12} className="text-brand-yellow" /> {storeName}
+              </p>
+              <span className="text-green-400 text-xs font-bold">{total.toLocaleString('lo-LA')} ₭</span>
+            </div>
+            <div className="space-y-1.5">
+              {records.map(r => {
+                const distribUser = users.find(u => u.id === r.created_by)
+                return (
+                  <div key={r.id} className="bg-dark-700 rounded-xl px-3 py-2 border border-green-900/30 flex items-center justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-400 text-xs">{new Date(r.created_at).toLocaleDateString('lo-LA', { day: 'numeric', month: 'short' })}</p>
+                      {distribUser && <p className="text-gray-500 text-xs">🚚 {distribUser.name}</p>}
+                    </div>
+                    <span className="text-green-400 text-xs font-semibold shrink-0">{(r.delivery_fee || 0).toLocaleString('lo-LA')} ₭ ✅</span>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
   function renderDistrib() {
 
     // ── Helper: group array by date string ──
@@ -1183,7 +1300,7 @@ function Inner() {
             </div>
           </div>
 
-          {activeNotifs.length === 0 && deliveredNotifs.length === 0 ? (
+          {activeNotifs.length === 0 ? (
             <Empty icon="📭" message="ຍັງບໍ່ມີຄຳສັ່ງ — ກົດ ສ້າງຄຳສັ່ງ ດ້ານເທິງ" />
           ) : (
             <div className="space-y-4">
@@ -1200,43 +1317,7 @@ function Inner() {
                   </div>
                 </div>
               ))}
-              {/* Delivered — grouped by distributor user */}
-              {deliveredNotifs.length > 0 && (() => {
-                // Group by assigned_to (distributor user ID)
-                const byDist = {}
-                deliveredNotifs.slice(0, 30).forEach(n => {
-                  const key = n.assigned_to || '__broadcast__'
-                  if (!byDist[key]) byDist[key] = []
-                  byDist[key].push(n)
-                })
-                return (
-                  <div>
-                    <p className="text-gray-500 text-xs font-semibold mb-3 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-gray-400 inline-block" />
-                      ສົ່ງສຳເລັດ ({deliveredNotifs.length}) — ແຍກຕາມຜູ້ກະຈາຍ
-                    </p>
-                    {Object.entries(byDist).map(([distId, items]) => {
-                      const distName = distId === '__broadcast__'
-                        ? 'ທຸກ Distributor (Broadcast)'
-                        : (users.find(u => u.id === distId)?.name || `Distributor ${distId.slice(0, 6)}`)
-                      return (
-                        <div key={distId} className="mb-4">
-                          <div className="flex items-center gap-2 mb-2">
-                            <div className="h-px flex-1 bg-dark-500" />
-                            <span className="text-blue-400 text-xs font-medium px-2 bg-dark-800 rounded-full border border-blue-400/20">
-                              🚚 {distName} ({items.length})
-                            </span>
-                            <div className="h-px flex-1 bg-dark-500" />
-                          </div>
-                          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {items.map(n => <NotifCard key={n.id} n={n} />)}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                )
-              })()}
+              {/* Delivered notifs moved to ຊຳລະແລ້ວ archive — see header button */}
             </div>
           )}
         </div>
@@ -1417,6 +1498,14 @@ function Inner() {
                   ລວມ: {grandTotal.toLocaleString('lo-LA')} ₭
                 </span>
               </div>
+              {distrib.some(r => (r.delivery_fee || 0) > 0 && !r.delivery_fee_paid) && (
+                <button
+                  onClick={markAllDeliveryFeesPaidAdmin}
+                  className="w-full py-2 rounded-xl bg-brand-yellow/10 text-brand-yellow border border-brand-yellow/30 font-semibold text-xs flex items-center justify-center gap-1.5 hover:bg-brand-yellow/20 transition-colors mb-3"
+                >
+                  💰 ຈ່າຍຄ່າຂົນສົ່ງທັງໝົດ
+                </button>
+              )}
               <div className="space-y-3">
                 {storeEntries.map(([storeName, { records, totalFee }]) => {
                   const paidFee   = records.filter(r => r.delivery_fee_paid).reduce((s, r) => s + (r.delivery_fee || 0), 0)
@@ -1881,7 +1970,45 @@ function Inner() {
   // ─── Render ────────────────────────────────────────────────────────────
   return (
     <div className="min-h-screen bg-dark-900">
-      <Header title="Admin Dashboard" subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ" />
+      <Header
+        title="Admin Dashboard"
+        subtitle="ຕິດຕາມແຈ່ວຫອມແຊບ"
+        middleActions={(() => {
+          const deliveredCount = notifications.filter(n => n.status === 'delivered').length
+          const paidFeesCount  = distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length
+          const btnBase = 'flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-colors relative'
+          return (
+            <div className="flex items-center gap-1">
+              {/* ສົ່ງສຳເລັດ archive */}
+              <button
+                onClick={() => setArchivePanel(p => p === 'delivered' ? null : 'delivered')}
+                className={`${btnBase} ${archivePanel === 'delivered' ? 'bg-green-700/40 text-green-300 border-green-600/50' : 'bg-dark-700 text-gray-400 border-dark-500 hover:text-green-300 hover:border-green-600/40'}`}
+              >
+                <CheckCircle size={13} />
+                <span className="hidden sm:inline">ຊຳລະແລ້ວ</span>
+                {deliveredCount > 0 && (
+                  <span className="bg-green-500 text-white text-[9px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 font-bold">
+                    {deliveredCount > 99 ? '99+' : deliveredCount}
+                  </span>
+                )}
+              </button>
+              {/* ຄ່າສົ່ງ archive */}
+              <button
+                onClick={() => setArchivePanel(p => p === 'fees' ? null : 'fees')}
+                className={`${btnBase} ${archivePanel === 'fees' ? 'bg-yellow-700/40 text-yellow-300 border-yellow-600/50' : 'bg-dark-700 text-gray-400 border-dark-500 hover:text-yellow-300 hover:border-yellow-600/40'}`}
+              >
+                <Truck size={13} />
+                <span className="hidden sm:inline">ຈ່າຍຄ່າສົ່ງ</span>
+                {paidFeesCount > 0 && (
+                  <span className="bg-brand-yellow text-dark-900 text-[9px] rounded-full min-w-[16px] h-4 flex items-center justify-center px-1 font-bold">
+                    {paidFeesCount > 99 ? '99+' : paidFeesCount}
+                  </span>
+                )}
+              </button>
+            </div>
+          )
+        })()}
+      />
 
       {/* ── Desktop Sidebar — lg+ only ─────────────────────────────────── */}
       <aside className="hidden lg:flex lg:flex-col lg:fixed lg:top-[61px] lg:left-0 lg:bottom-0 lg:w-52 lg:z-20 lg:bg-dark-800 lg:border-r lg:border-dark-500">
@@ -1947,6 +2074,34 @@ function Inner() {
           )}
         </Page>
       </div>
+
+      {/* ── Archive Drawer ──────────────────────────────────────────────── */}
+      {archivePanel && (
+        <div className="fixed inset-0 z-50" onClick={() => setArchivePanel(null)}>
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+          <div
+            className="absolute inset-x-0 bottom-0 md:inset-y-0 md:right-0 md:left-auto md:w-[400px] bg-dark-800 rounded-t-3xl md:rounded-none flex flex-col border-t border-dark-500 md:border-t-0 md:border-l"
+            style={{ maxHeight: '85dvh' }}
+            onClick={e => e.stopPropagation()}
+          >
+            {/* Drag handle — mobile */}
+            <div className="md:hidden w-10 h-1 bg-dark-400 rounded-full mx-auto mt-3 shrink-0" />
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-dark-500 shrink-0">
+              <div className="flex items-center gap-2">
+                {archivePanel === 'delivered' && <><CheckCircle size={16} className="text-green-400" /><span className="text-white font-bold text-sm">ສົ່ງສຳເລັດ ({notifications.filter(n => n.status === 'delivered').length})</span></>}
+                {archivePanel === 'fees'      && <><Truck size={16} className="text-brand-yellow" /><span className="text-white font-bold text-sm">ຈ່າຍຄ່າສົ່ງ ({distrib.filter(r => r.delivery_fee_paid && (r.delivery_fee || 0) > 0).length})</span></>}
+              </div>
+              <button onClick={() => setArchivePanel(null)} className="text-gray-400 hover:text-white transition-colors p-1 rounded-lg hover:bg-dark-600">✕</button>
+            </div>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-4 py-3">
+              {archivePanel === 'delivered' && renderAdminDeliveredArchive()}
+              {archivePanel === 'fees'      && renderAdminPaidFeesArchive()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── User Form Modal ─────────────────────────────────────────────── */}
       <Modal open={showUserForm} onClose={() => setShowUserForm(false)} title={editUser ? '✏️ ແກ້ໄຂ User' : '➕ ສ້າງ User ໃໝ່'}>
