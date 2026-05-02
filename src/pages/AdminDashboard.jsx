@@ -96,6 +96,11 @@ function Inner() {
   // Archive panel: null | 'delivered' | 'fees'
   const [archivePanel, setArchivePanel] = useState(null)
 
+  // WhatsApp share status (persisted in localStorage)
+  const [waSharedIds, setWaSharedIds] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('wa_shared_distrib') || '{}') } catch { return {} }
+  })
+
   // Notification edit + cancel
   const [editNotif, setEditNotif]                 = useState(null)
   const [showEditNotifForm, setShowEditNotifForm] = useState(false)
@@ -310,6 +315,36 @@ function Inner() {
       if (error) throw error
       load()
     } catch (err) { toast.error('ຜິດພາດ: ' + err.message) }
+  }
+
+  // ─── WhatsApp share helper ────────────────────────────────────────────
+  function shareToWhatsApp(records, storeName, imgUrl) {
+    // Look up store phone from stores array
+    const storePhone = stores.find(s => s.name === storeName)?.phone || ''
+    const cleanPhone = storePhone.replace(/\D/g, '')
+
+    // Build message
+    const productLines = records.map(r =>
+      `• ${r.products?.type} ${r.products?.size} × ${r.quantity} ຕຸກ`
+    ).join('\n')
+    const dateStr = records[0]?.created_at
+      ? new Date(records[0].created_at).toLocaleDateString('lo-LA')
+      : ''
+    const msg = `📦 ໃບບິນ – ${storeName}\n${productLines}\n📅 ${dateStr}${imgUrl ? '\n\n🖼 ' + imgUrl : ''}`
+
+    // Mark as shared (all record IDs in group)
+    const newShared = { ...waSharedIds }
+    records.forEach(r => { newShared[r.id] = true })
+    setWaSharedIds(newShared)
+    localStorage.setItem('wa_shared_distrib', JSON.stringify(newShared))
+
+    if (cleanPhone) {
+      window.open(`https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`, '_blank')
+    } else {
+      // No phone — fallback: copy text + open WhatsApp without number
+      window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank')
+      toast.info('ຮ້ານບໍ່ມີເບີ WhatsApp — ເປີດ WhatsApp ໂດຍບໍ່ລະບຸເບີ')
+    }
   }
 
   // ─── Mark ALL delivery fees paid (admin) ─────────────────────────────
@@ -1248,33 +1283,99 @@ function Inner() {
     const unpaid = filtered.filter(r => !r.is_paid)
     const paid   = filtered.filter(r =>  r.is_paid)
 
-    function DistribCard({ r }) {
+    // ── Group unpaid by notification_id (invoice), fallback to store+date ──
+    const invoiceMap = {}
+    unpaid.forEach(r => {
+      const key = r.notification_id
+        ? `notif_${r.notification_id}`
+        : `store_${r.store_name}_${r.created_at?.slice(0, 10)}`
+      if (!invoiceMap[key]) {
+        invoiceMap[key] = {
+          key,
+          notification_id: r.notification_id,
+          store_name:   r.store_name,
+          created_at:   r.created_at,
+          created_by:   r.created_by,
+          payment_method: r.payment_method,
+          phone:        r.phone,
+          records:      [],
+        }
+      }
+      invoiceMap[key].records.push(r)
+    })
+    const invoiceGroups = Object.values(invoiceMap)
+      .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+
+    // ── Invoice card (one card per store/invoice) ──
+    function InvoiceCard({ group }) {
+      const { store_name, created_at, created_by, payment_method, records } = group
+      const distrib_name = users.find(u => u.id === created_by)?.name || 'Unknown'
+      const storePhone   = stores.find(s => s.name === store_name)?.phone || ''
+      const hasImages    = records.some(r => r.bill_image_url || r.slip_image_url || r.delivery_image_url)
+      const allShared    = records.every(r => waSharedIds[r.id])
+      const anyShared    = records.some(r => waSharedIds[r.id])
       return (
-        <div className="card hover:border-dark-400 transition-colors">
+        <div className="card hover:border-brand-yellow/20 transition-colors space-y-2">
+          {/* Header row */}
           <div className="flex justify-between items-start gap-2">
-            <button onClick={() => openDetail('distrib', r)} className="flex-1 text-left min-w-0">
-              <p className="text-white font-bold text-base leading-tight">{r.store_name || '—'}</p>
-              <p className="text-brand-yellow font-semibold text-sm mt-0.5">
-                {r.products?.type} {r.products?.size} × {r.quantity} ຕຸກ
-              </p>
-              <p className="text-gray-400 text-xs mt-1">👤 {users.find(u => u.id === r.created_by)?.name || 'Unknown'}</p>
-              <p className="text-gray-500 text-xs">{fmtDateTime(r.created_at)}</p>
-              {(r.bill_image_url || r.slip_image_url || r.delivery_image_url) && (
-                <p className="text-brand-yellow text-xs mt-0.5 flex items-center gap-1"><Image size={10} />ມີຮູບ</p>
-              )}
-            </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-white font-bold text-base leading-tight truncate">{store_name || '—'}</p>
+              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                <span className={`text-xs px-2 py-0.5 rounded-full ${payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
+                  {payment_method === 'cash' ? '💵 ສົດ' : '💳 ໂອນ'}
+                </span>
+                {storePhone && <span className="text-xs text-gray-500">📞 {storePhone}</span>}
+                {anyShared && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-green-900/20 text-green-400 border border-green-700/30 flex items-center gap-1">
+                    ✅ ແຊຣ໌ WhatsApp ແລ້ວ
+                  </span>
+                )}
+              </div>
+              <p className="text-gray-500 text-xs mt-0.5">👤 {distrib_name} · {fmtDateTime(created_at)}</p>
+            </div>
             <div className="flex flex-col items-end gap-1 shrink-0">
-              <span className={`text-xs px-2 py-0.5 rounded-full ${r.payment_method === 'cash' ? 'bg-green-900/30 text-green-400' : 'bg-blue-900/30 text-blue-400'}`}>
-                {r.payment_method === 'cash' ? '💵 ສົດ' : '💳 ໂອນ'}
-              </span>
-              <PaidBtn type="distrib" id={r.id} isPaid={r.is_paid} />
+              {/* Mark all in group as paid */}
               <button
-                onClick={e => { e.stopPropagation(); setDeleteSingleDistrib(r) }}
-                className="text-xs px-2 py-0.5 rounded-lg bg-dark-700 text-red-400 border border-red-400/20 hover:bg-red-900/20 transition-colors"
+                onClick={async e => {
+                  e.stopPropagation()
+                  const ids = records.map(r => r.id)
+                  const { error } = await supabase.from('distribution').update({ is_paid: true }).in('id', ids)
+                  if (error) { toast.error('ຜິດພາດ'); return }
+                  toast.success('ຊຳລະແລ້ວ ✅'); load()
+                }}
+                className="text-xs px-2 py-1 rounded-lg bg-green-900/30 text-green-400 border border-green-700/30 hover:bg-green-900/50 transition-colors whitespace-nowrap"
               >
-                🗑 ລຶບ
+                ✅ ຊຳລະ
+              </button>
+              {/* Share to WhatsApp */}
+              <button
+                onClick={e => { e.stopPropagation(); shareToWhatsApp(records, store_name, null) }}
+                className={`text-xs px-2 py-1 rounded-lg border transition-colors whitespace-nowrap ${allShared ? 'bg-green-900/20 text-green-400 border-green-700/30' : 'bg-dark-600 text-green-300 border-green-700/30 hover:bg-green-900/20'}`}
+              >
+                📤 WhatsApp
               </button>
             </div>
+          </div>
+
+          {/* Product rows */}
+          <div className="space-y-1 pt-1 border-t border-dark-500">
+            {records.map(r => (
+              <button
+                key={r.id}
+                onClick={() => openDetail('distrib', r)}
+                className="w-full flex justify-between items-center py-1 px-1 rounded-lg hover:bg-dark-600/50 transition-colors text-left"
+              >
+                <span className="text-brand-yellow font-semibold text-sm">
+                  {r.products?.type} {r.products?.size} × {r.quantity} ຕຸກ
+                </span>
+                <div className="flex items-center gap-2">
+                  {(r.bill_image_url || r.slip_image_url || r.delivery_image_url) && (
+                    <span className="text-brand-yellow text-xs flex items-center gap-0.5"><Image size={10} />ຮູບ</span>
+                  )}
+                  <ChevronRight size={13} className="text-gray-600" />
+                </div>
+              </button>
+            ))}
           </div>
         </div>
       )
@@ -1506,17 +1607,17 @@ function Inner() {
             )}
           </div>
 
-          {unpaid.length === 0 ? (
+          {invoiceGroups.length === 0 ? (
             <Empty icon="🚚" message={hasFilter ? 'ບໍ່ພົບລາຍການທີ່ກົງກັບ filter' : 'ຍັງບໍ່ມີການກະຈາຍທີ່ຄ້າງຊຳລະ'} />
           ) : (
             <div className="space-y-5">
               <div>
                 <p className="text-orange-400 text-xs font-semibold mb-2 flex items-center gap-1.5">
                   <span className="w-2 h-2 rounded-full bg-orange-400 animate-pulse inline-block" />
-                  ຍັງບໍ່ທັນຊຳລະ ({unpaid.length})
+                  ຍັງບໍ່ທັນຊຳລະ ({invoiceGroups.length} ໃບ · {unpaid.length} ລາຍການ)
                 </p>
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-                  {unpaid.map(r => <DistribCard key={r.id} r={r} />)}
+                  {invoiceGroups.map(g => <InvoiceCard key={g.key} group={g} />)}
                 </div>
               </div>
               {/* ຊຳລະແລ້ວ records moved to ຊຳລະແລ້ວ archive — see header button */}
@@ -2708,11 +2809,60 @@ function Inner() {
                   {detail.type === 'production' && detailImgs.image_url && (
                     <div><p className="text-gray-400 text-xs mb-1">📸 ຮູບພາບ</p><img src={detailImgs.image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>
                   )}
-                  {detail.type === 'distrib' && <>
-                    {detailImgs.bill_image_url     && <div><p className="text-gray-400 text-xs mb-1">🧾 ໃບບິນ</p><img src={detailImgs.bill_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>}
-                    {detailImgs.slip_image_url     && <div><p className="text-gray-400 text-xs mb-1">💳 ສະລິບໂອນ</p><img src={detailImgs.slip_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>}
-                    {detailImgs.delivery_image_url && <div><p className="text-gray-400 text-xs mb-1">📦 ຮູບສົ່ງ</p><img src={detailImgs.delivery_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>}
-                  </>}
+                  {detail.type === 'distrib' && (() => {
+                    const dr = detail.record
+                    const drRecords = [dr]
+                    const isShared = waSharedIds[dr.id]
+                    return (
+                      <>
+                        {/* WhatsApp share strip */}
+                        <div className="flex items-center gap-2 p-3 rounded-xl bg-dark-700 border border-dark-500">
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs text-gray-400">📤 ແຊຣ໌ໃຫ້ຮ້ານຄ້າ</p>
+                            {stores.find(s => s.name === dr.store_name)?.phone
+                              ? <p className="text-xs text-green-400 font-medium">{stores.find(s => s.name === dr.store_name).phone}</p>
+                              : <p className="text-xs text-gray-600">ຮ້ານນີ້ຍັງບໍ່ມີເບີ WhatsApp</p>
+                            }
+                          </div>
+                          {isShared && (
+                            <span className="text-xs px-2 py-1 rounded-full bg-green-900/20 text-green-400 border border-green-700/30">
+                              ✅ ແຊຣ໌ແລ້ວ
+                            </span>
+                          )}
+                          <button
+                            onClick={() => shareToWhatsApp(
+                              drRecords,
+                              dr.store_name,
+                              detailImgs.bill_image_url || detailImgs.delivery_image_url || null
+                            )}
+                            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-xl font-semibold border transition-colors ${isShared ? 'bg-green-900/20 text-green-300 border-green-700/30 hover:bg-green-900/40' : 'bg-green-900/30 text-green-300 border-green-700/30 hover:bg-green-900/50'}`}
+                          >
+                            <Send size={13} />
+                            {isShared ? 'ສົ່ງອີກ' : 'WhatsApp'}
+                          </button>
+                        </div>
+
+                        {detailImgs.bill_image_url && (
+                          <div>
+                            <p className="text-gray-400 text-xs mb-1">🧾 ໃບບິນ</p>
+                            <img src={detailImgs.bill_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" />
+                          </div>
+                        )}
+                        {detailImgs.slip_image_url && (
+                          <div>
+                            <p className="text-gray-400 text-xs mb-1">💳 ສະລິບໂອນ</p>
+                            <img src={detailImgs.slip_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" />
+                          </div>
+                        )}
+                        {detailImgs.delivery_image_url && (
+                          <div>
+                            <p className="text-gray-400 text-xs mb-1">📦 ຮູບສົ່ງ</p>
+                            <img src={detailImgs.delivery_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" />
+                          </div>
+                        )}
+                      </>
+                    )
+                  })()}
                   {detail.type === 'sales' && <>
                     {detailImgs.image_url        && <div><p className="text-gray-400 text-xs mb-1">🏪 ຮູບຮ້ານ / Stock</p><img src={detailImgs.image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>}
                     {detailImgs.report_image_url && <div><p className="text-gray-400 text-xs mb-1">📊 ຮູບລາຍງານ</p><img src={detailImgs.report_image_url} alt="" className="w-full rounded-xl object-cover max-h-64" /></div>}
